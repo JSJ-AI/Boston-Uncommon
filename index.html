@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boston Uncommon — SOC Simulation</title>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-dark:     #0a0c10;
+    --bg-panel:    #111318;
+    --bg-card:     #181c24;
+    --border:      #2a2f3d;
+    --accent:      #00d4ff;
+    --accent2:     #7c3aed;
+    --danger:      #ef4444;
+    --warning:     #f59e0b;
+    --success:     #22c55e;
+    --text-primary:#e2e8f0;
+    --text-muted:  #64748b;
+    --text-dim:    #94a3b8;
+    --panel-w:     280px;
+    --font:        'Segoe UI', system-ui, sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* ── Layout ─────────────────────────────────── */
+  #layout {
+    display: grid;
+    grid-template-columns: var(--panel-w) 1fr var(--panel-w);
+    grid-template-rows: 48px 1fr;
+    height: 100vh;
+  }
+
+  /* ── Top bar ─────────────────────────────────── */
+  #topbar {
+    grid-column: 1 / -1;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 24px;
+  }
+
+  #topbar .logo {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  #topbar .logo span {
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .sep { flex: 1; }
+
+  #timer-block {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #timer-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  #timer-display {
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--warning);
+    letter-spacing: 0.05em;
+    min-width: 72px;
+    text-align: right;
+  }
+
+  #timer-display.active { color: var(--danger); }
+
+  .status-pill {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .status-pill.standby  { background: rgba(100,116,139,0.2); color: var(--text-muted); border: 1px solid var(--border); }
+  .status-pill.active   { background: rgba(239,68,68,0.15);  color: var(--danger);     border: 1px solid rgba(239,68,68,0.4); }
+  .status-pill.scanning { background: rgba(0,212,255,0.12);  color: var(--accent);     border: 1px solid rgba(0,212,255,0.35); animation: pulse-pill 2s infinite; }
+
+  @keyframes pulse-pill {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.6; }
+  }
+
+  /* ── Left panel ─────────────────────────────── */
+  #left-panel {
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Map ─────────────────────────────────────── */
+  #map {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── Right panel ─────────────────────────────── */
+  #right-panel {
+    background: var(--bg-panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Panel sections ──────────────────────────── */
+  .panel-header {
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .panel-header .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .panel-section {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-section label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  /* ── Buttons ─────────────────────────────────── */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.03em;
+    margin-bottom: 6px;
+  }
+
+  .btn:last-child { margin-bottom: 0; }
+
+  .btn:hover {
+    background: #1e2430;
+    border-color: #3a4050;
+  }
+
+  .btn.primary {
+    background: rgba(0,212,255,0.1);
+    border-color: rgba(0,212,255,0.4);
+    color: var(--accent);
+  }
+
+  .btn.primary:hover {
+    background: rgba(0,212,255,0.18);
+    border-color: var(--accent);
+  }
+
+  .btn.danger {
+    background: rgba(239,68,68,0.1);
+    border-color: rgba(239,68,68,0.4);
+    color: var(--danger);
+  }
+
+  .btn.danger:hover {
+    background: rgba(239,68,68,0.18);
+    border-color: var(--danger);
+  }
+
+  .btn.success {
+    background: rgba(34,197,94,0.1);
+    border-color: rgba(34,197,94,0.4);
+    color: var(--success);
+  }
+
+  .btn.success:hover {
+    background: rgba(34,197,94,0.18);
+    border-color: var(--success);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ── Agent count badges ──────────────────────── */
+  .agent-counts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .agent-badge {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .agent-badge .icon {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .agent-badge .info { flex: 1; }
+
+  .agent-badge .info .name {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .agent-badge .info .count {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  /* ── Alert feed ──────────────────────────────── */
+  #alert-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  #alert-feed::-webkit-scrollbar { width: 4px; }
+  #alert-feed::-webkit-scrollbar-track { background: transparent; }
+  #alert-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .alert-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    border-left: 3px solid var(--border);
+  }
+
+  .alert-item.info    { border-left-color: var(--accent); }
+  .alert-item.warning { border-left-color: var(--warning); }
+  .alert-item.danger  { border-left-color: var(--danger); }
+  .alert-item.success { border-left-color: var(--success); }
+
+  .alert-item .alert-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+    margin-bottom: 2px;
+  }
+
+  .alert-item .alert-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  .alert-item .alert-text strong { color: var(--text-primary); }
+
+  /* ── Incident status ─────────────────────────── */
+  #incident-status {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .incident-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .incident-row .key {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .incident-row .val {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .incident-row .val.none { color: var(--text-muted); }
+
+  /* ── Map overlay: crosshair when deploying ────── */
+  #map.deploying { cursor: crosshair; }
+
+  /* ── Map attribution ─────────────────────────── */
+  .maplibregl-ctrl-attrib {
+    background: rgba(10,12,16,0.75) !important;
+    color: var(--text-muted) !important;
+  }
+
+  .maplibregl-ctrl-attrib a { color: var(--text-muted) !important; }
+
+  /* ── Coordinates bar ─────────────────────────── */
+  #coords-bar {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,12,16,0.8);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ── Loading overlay ─────────────────────────── */
+  #map-loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(10,12,16,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    gap: 12px;
+  }
+
+  #map-loading .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #map-loading .load-text {
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Deploy mode banner ──────────────────────── */
+  #deploy-banner {
+    display: none;
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(239,68,68,0.9);
+    color: white;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    z-index: 15;
+    pointer-events: none;
+  }
+
+  #deploy-banner.visible { display: block; }
+
+</style>
+</head>
+<body>
+
+<div id="layout">
+
+  <!-- ── TOP BAR ──────────────────────────────── -->
+  <div id="topbar">
+    <div class="logo">Boston <span>Un</span>common <span style="color:var(--text-muted);font-size:10px;margin-left:4px;">SOC SIM v0.1</span></div>
+    <div class="sep"></div>
+    <div id="timer-block">
+      <div id="timer-label">Incident Response</div>
+      <div id="timer-display">00:00</div>
+    </div>
+    <div id="system-status" class="status-pill standby">Standby</div>
+  </div>
+
+  <!-- ── LEFT PANEL ───────────────────────────── -->
+  <div id="left-panel">
+
+    <div class="panel-header"><div class="dot"></div>Scenario Control</div>
+
+    <div class="panel-section">
+      <label>Operations</label>
+      <button class="btn primary" id="btn-start-scenario">⚡ Start Scenario</button>
+      <button class="btn" id="btn-reset" disabled>↺ Reset</button>
+    </div>
+
+    <div class="panel-section">
+      <label>Deploy Incident</label>
+      <button class="btn danger" id="btn-deploy-bad-guy" disabled>☠ Deploy Bad Guy</button>
+      <div id="bad-guy-type-select" style="display:none; margin-top:8px;">
+        <label>Incident Type</label>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button class="btn danger" onclick="selectBadGuyType('car')">🚗 Red Car</button>
+          <button class="btn danger" onclick="selectBadGuyType('bike')">🚲 Red Bike</button>
+          <button class="btn danger" onclick="selectBadGuyType('person')">🚶 Red Person</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <label>Assets Deployed</label>
+      <div class="agent-counts">
+        <div class="agent-badge">
+          <div class="icon">🚁</div>
+          <div class="info">
+            <div class="name">Drones</div>
+            <div class="count" id="count-drones">0/3</div>
+          </div>
+        </div>
+        <div class="agent-badge">
+          <div class="icon">🚓</div>
+          <div class="info">
+            <div class="name">Vehicles</div>
+            <div class="count" id="count-cars">0/5</div>
+          </div>
+        </div>
+        <div class="agent-badge">
+          <div class="icon">🚲</div>
+          <div class="info">
+            <div class="name">Bikes</div>
+            <div class="count" id="count-bikes">0/5</div>
+          </div>
+        </div>
+        <div class="agent-badge">
+          <div class="icon">👮</div>
+          <div class="info">
+            <div class="name">Officers</div>
+            <div class="count" id="count-officers">0/10</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Placeholder for attribute panel - populated when bad guy is active -->
+    <div class="panel-section" id="bad-guy-attributes" style="display:none;">
+      <label>Incident Attributes</label>
+      <div id="bad-guy-attr-content"></div>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    <div class="panel-section" style="font-size:10px; color:var(--text-muted); line-height:1.6;">
+      <div>📍 Boston Common · 5mi grid</div>
+      <div>🗺 OpenStreetMap / OpenFreeMap</div>
+      <div style="margin-top:4px; color: var(--border);">OSM Road Network: loading...</div>
+    </div>
+
+  </div>
+
+  <!-- ── MAP ──────────────────────────────────── -->
+  <div id="map">
+    <div id="map-loading">
+      <div class="spinner"></div>
+      <div class="load-text">Initializing SOC Grid...</div>
+    </div>
+    <div id="deploy-banner">⚠ Click Map to Place Incident</div>
+    <div id="coords-bar">42.3551° N, 71.0659° W</div>
+  </div>
+
+  <!-- ── RIGHT PANEL ──────────────────────────── -->
+  <div id="right-panel">
+
+    <div class="panel-header"><div class="dot" style="background:var(--danger);"></div>Alert Feed</div>
+
+    <div id="alert-feed">
+      <div class="alert-item info">
+        <div class="alert-time">00:00:00</div>
+        <div class="alert-text"><strong>System online.</strong> Awaiting scenario deployment.</div>
+      </div>
+    </div>
+
+    <div id="incident-status">
+      <div class="incident-row">
+        <div class="key">Incident</div>
+        <div class="val none" id="inc-type">None</div>
+      </div>
+      <div class="incident-row">
+        <div class="key">Location</div>
+        <div class="val none" id="inc-location">—</div>
+      </div>
+      <div class="incident-row">
+        <div class="key">Status</div>
+        <div class="val none" id="inc-status-val">Standby</div>
+      </div>
+      <div class="incident-row">
+        <div class="key">Detections</div>
+        <div class="val" id="inc-detections">0</div>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- end #layout -->
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+var BOSTON_COMMON = [-71.0659, 42.3551];
+var DEFAULT_ZOOM  = 14;
+var MIN_ZOOM      = 12;
+var MAX_ZOOM      = 18;
+
+// 5-mile bounding box around Boston Common
+var MAX_BOUNDS = [
+  [-71.180, 42.278],  // SW
+  [-70.952, 42.432]   // NE
+];
+
+var map, timerInterval, timerSeconds = 0;
+var scenarioRunning = false;
+var deployMode = false;
+var pendingBadGuyType = null;
+
+// ── Map Init ─────────────────────────────────────────────────────────────────
+function initMap() {
+  map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/bright',
+    center: BOSTON_COMMON,
+    zoom: DEFAULT_ZOOM,
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    maxBounds: MAX_BOUNDS,
+    attributionControl: true
+  });
+
+  map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+  map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'imperial' }), 'bottom-right');
+
+  map.on('load', function() {
+    // Fix fonts (proven pattern from MBTA/Traffic Twin)
+    map.setGlyphs('https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf');
+
+    // Hide loading overlay
+    document.getElementById('map-loading').style.display = 'none';
+
+    // Enable scenario button
+    document.getElementById('btn-start-scenario').disabled = false;
+
+    addAlert('info', 'Map grid online. Boston Common operational area loaded.');
+    addAlert('info', 'Ready to start scenario.');
+
+    // Update road network status
+    document.querySelector('#left-panel .panel-section:last-child div:last-child').textContent = '🛣 OSM Road Network: ready';
+  });
+
+  map.on('error', function(e) {
+    console.warn('Map error:', e);
+  });
+
+  // Live coordinate display
+  map.on('mousemove', function(e) {
+    var lat = e.lngLat.lat.toFixed(5);
+    var lng = e.lngLat.lng.toFixed(5);
+    document.getElementById('coords-bar').textContent = lat + '\u00b0 N, ' + Math.abs(lng) + '\u00b0 W';
+  });
+
+  // Map click handler (for deploying bad guy)
+  map.on('click', function(e) {
+    if (deployMode && pendingBadGuyType) {
+      placeBadGuy(e.lngLat.lat, e.lngLat.lng, pendingBadGuyType);
+    }
+  });
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
+function startTimer() {
+  timerSeconds = 0;
+  clearInterval(timerInterval);
+  var display = document.getElementById('timer-display');
+  display.classList.add('active');
+  timerInterval = setInterval(function() {
+    timerSeconds++;
+    var m = Math.floor(timerSeconds / 60);
+    var s = timerSeconds % 60;
+    display.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  document.getElementById('timer-display').classList.remove('active');
+}
+
+function resetTimer() {
+  stopTimer();
+  timerSeconds = 0;
+  document.getElementById('timer-display').textContent = '00:00';
+}
+
+// ── Alert Feed ────────────────────────────────────────────────────────────────
+function getTimeStamp() {
+  var m = Math.floor(timerSeconds / 60);
+  var s = timerSeconds % 60;
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + ':' + new Date().toISOString().substr(17, 2);
+}
+
+function addAlert(type, text) {
+  var feed = document.getElementById('alert-feed');
+  var item = document.createElement('div');
+  item.className = 'alert-item ' + type;
+  item.innerHTML =
+    '<div class="alert-time">' + getTimeStamp() + '</div>' +
+    '<div class="alert-text">' + text + '</div>';
+  feed.insertBefore(item, feed.firstChild);
+  // Keep max 50 alerts
+  while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+// ── Bad Guy Deployment (stub) ─────────────────────────────────────────────────
+function selectBadGuyType(type) {
+  pendingBadGuyType = type;
+  document.getElementById('bad-guy-type-select').style.display = 'none';
+  enterDeployMode();
+}
+
+function enterDeployMode() {
+  deployMode = true;
+  document.getElementById('map').classList.add('deploying');
+  document.getElementById('deploy-banner').classList.add('visible');
+  addAlert('warning', 'Deploy mode active. Click map to place incident.');
+}
+
+function exitDeployMode() {
+  deployMode = false;
+  pendingBadGuyType = null;
+  document.getElementById('map').classList.remove('deploying');
+  document.getElementById('deploy-banner').classList.remove('visible');
+}
+
+function placeBadGuy(lat, lng, type) {
+  exitDeployMode();
+  var labels = { car: 'Red Car', bike: 'Red Bike', person: 'Red Person' };
+  var label = labels[type] || type;
+
+  // Update incident status panel
+  document.getElementById('inc-type').textContent = label;
+  document.getElementById('inc-type').classList.remove('none');
+  document.getElementById('inc-location').textContent = lat.toFixed(4) + ', ' + lng.toFixed(4);
+  document.getElementById('inc-location').classList.remove('none');
+  document.getElementById('inc-status-val').textContent = 'Active';
+  document.getElementById('inc-status-val').classList.remove('none');
+
+  // Alert
+  addAlert('danger', '<strong>INCIDENT DEPLOYED</strong> — ' + label + ' at ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+
+  // Start timer
+  startTimer();
+
+  // Update system status
+  var pill = document.getElementById('system-status');
+  pill.textContent = 'Active Incident';
+  pill.className = 'status-pill active';
+
+  console.log('Bad guy placed:', type, lat, lng);
+  // Agent logic and map marker will be wired in Step 2
+}
+
+// ── Scenario Control ──────────────────────────────────────────────────────────
+document.getElementById('btn-start-scenario').addEventListener('click', function() {
+  if (scenarioRunning) return;
+  scenarioRunning = true;
+  this.disabled = true;
+  document.getElementById('btn-reset').disabled = false;
+  document.getElementById('btn-deploy-bad-guy').disabled = false;
+
+  // Update status
+  var pill = document.getElementById('system-status');
+  pill.textContent = 'Scanning';
+  pill.className = 'status-pill scanning';
+
+  // Update counts (will be populated by agent logic in Step 2)
+  document.getElementById('count-drones').textContent = '3/3';
+  document.getElementById('count-cars').textContent = '5/5';
+  document.getElementById('count-bikes').textContent = '5/5';
+  document.getElementById('count-officers').textContent = '10/10';
+
+  addAlert('success', '<strong>Scenario started.</strong> 3 drones, 5 vehicles, 5 bikes, 10 officers deploying.');
+  addAlert('info', 'All units entering patrol pattern. Deploy incident when ready.');
+});
+
+document.getElementById('btn-deploy-bad-guy').addEventListener('click', function() {
+  document.getElementById('bad-guy-type-select').style.display = 'block';
+});
+
+document.getElementById('btn-reset').addEventListener('click', function() {
+  scenarioRunning = false;
+  document.getElementById('btn-start-scenario').disabled = false;
+  document.getElementById('btn-reset').disabled = true;
+  document.getElementById('btn-deploy-bad-guy').disabled = true;
+  document.getElementById('bad-guy-type-select').style.display = 'none';
+  document.getElementById('count-drones').textContent = '0/3';
+  document.getElementById('count-cars').textContent = '0/5';
+  document.getElementById('count-bikes').textContent = '0/5';
+  document.getElementById('count-officers').textContent = '0/10';
+  document.getElementById('inc-type').textContent = 'None';
+  document.getElementById('inc-type').classList.add('none');
+  document.getElementById('inc-location').textContent = '—';
+  document.getElementById('inc-location').classList.add('none');
+  document.getElementById('inc-status-val').textContent = 'Standby';
+  document.getElementById('inc-status-val').classList.add('none');
+  document.getElementById('inc-detections').textContent = '0';
+  resetTimer();
+  exitDeployMode();
+  var pill = document.getElementById('system-status');
+  pill.textContent = 'Standby';
+  pill.className = 'status-pill standby';
+  addAlert('info', 'Scenario reset. System standby.');
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', function() {
+  document.getElementById('btn-start-scenario').disabled = true;
+  initMap();
+});
+</script>
+
+</body>
+</html>
