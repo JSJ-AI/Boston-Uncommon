@@ -120,7 +120,7 @@ body{display:flex;flex-direction:column;}
 <body>
 
 <div id="topbar">
-  <div class="logo">Boston <span>Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
+  <div class="logo">Boston <span style="color:#ef4444">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
   <div class="sep"></div>
   <span class="tlabel">Response&nbsp;Time&nbsp;&nbsp;</span>
   <div id="timer">00:00</div>
@@ -133,7 +133,7 @@ body{display:flex;flex-direction:column;}
     <div class="ph"><div class="ph-dot"></div>Scenario Control</div>
     <div class="ps">
       <span class="psl">Operations</span>
-      <button class="btn bp" id="btn-start" disabled>&#9889; Start Scenario</button>
+      <button class="btn bp" id="btn-start" disabled style="display:none">&#9889; Start Scenario</button>
       <button class="btn" id="btn-reset" disabled>&#8635; Reset</button>
     </div>
     <div class="ps">
@@ -336,8 +336,8 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
   car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
-  bike:    /^(primary|secondary|tertiary|residential|unclassified|trunk|.*_link|service|cycleway|path|footway|pedestrian|track)$/,
-  officer: /^(primary|secondary|tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track)$/,
+  bike:    /^(tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
+  officer: /^(tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
 
@@ -636,15 +636,18 @@ function doPlaceAgents() {
   types.forEach(function(type) {
     var pt;
     if (type === 'drone') {
-      // Drone: aerial, ignores roads — random within radius
+      // Drone: aerial, ignores roads — random within 0.5mi radius
       var angle = Math.random() * 2 * Math.PI;
       var dist  = Math.sqrt(Math.random()) * 805 / 111320;
       pt = {
         lat: BOSTON_LAT + dist * Math.cos(angle),
         lon: BOSTON_LNG + dist * Math.sin(angle) / Math.cos(BOSTON_LAT * Math.PI / 180)
       };
+    } else if (type === 'bike' || type === 'officer') {
+      // Bikes + officers: side roads/paths within 2000ft (610m) of center
+      pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 610, type);
     } else {
-      // Cars, bikes, officers must be on road segments
+      // Cars: roads within 0.5mi radius
       pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805, type);
     }
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
