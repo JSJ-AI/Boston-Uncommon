@@ -382,7 +382,7 @@ function buildGraph(data) {
   // Pre-compute valid node lists per agent type
   // A node is valid for a type if it has at least one neighbor reachable via allowed highway
   roadGraph.nodesByType = {};
-  ['car','bike','officer'].forEach(function(type) {
+  ['car','bike','officer','drone'].forEach(function(type) {
     var hwf = ALLOWED_HIGHWAYS[type];
     roadGraph.nodesByType[type] = roadGraph.nodeIds.filter(function(nid) {
       var n = nodes[nid];
@@ -848,7 +848,19 @@ function moveRoadAgent(agent, remainDist) {
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
   if (agent.status === 'pursuing' && badGuy && badGuy.active) {
-    // Orbit tightly above bad guy — 40m radius circle, 15deg/tick
+    // First fly to scene if still far away, then orbit
+    var droneDist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+    if (droneDist > 60) {
+      // Fly toward bad guy at 3x speed
+      agent.bearing = bearingDeg(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+      var flyDist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * 3;
+      var flyRad  = agent.bearing * Math.PI / 180;
+      agent.lat += (flyDist * Math.cos(flyRad)) / 111320;
+      agent.lon += (flyDist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      agent.updateMarker();
+      return;
+    }
+    // Close enough — orbit tightly above bad guy
     if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
     agent._orbitAngle = (agent._orbitAngle + 15) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
@@ -895,9 +907,11 @@ function autoStart() {
 
 var badGuy       = null;
 var detectionCount = 0;
-var pursuing     = { car:null, bike:null, officer:null };
+var pursuing     = { car:null, bike:null, officer:null, drone:null };
 var tickCount    = 0;
 var incidentOn   = false;
+var captureCountdown = 0;   // seconds remaining before capture
+var captureTimerInt  = null; // interval for countdown
 
 // ── BAD GUY CLASS ─────────────────────────────────────────────────────────────
 function BadGuy(type, lat, lon) {
@@ -970,8 +984,9 @@ function clearIncident() {
   document.getElementById('i-stat').textContent='Standby';
   document.getElementById('i-stat').classList.add('none');
   stopTimer();
+  captureCountdown = 0;
+  clearInterval(captureTimerInt);
   setPill('scan','Scanning');
-  // Clear FOV colors back to normal
   updateFOV();
 }
 
@@ -1050,7 +1065,7 @@ function closestAgent(type) {
 
 function dispatchPursuit(detector) {
   var dispatched = [];
-  ['car','bike','officer'].forEach(function(type) {
+  ['car','bike','officer','drone'].forEach(function(type) {
     if (pursuing[type] && pursuing[type].status==='pursuing') return;
     var a = closestAgent(type);
     if (a) {
@@ -1091,17 +1106,33 @@ function checkDetection() {
 
 // ── CAPTURE CHECK ─────────────────────────────────────────────────────────────
 function checkCapture() {
-  if (!badGuy || !badGuy.active) return;
-  agents.forEach(function(a) {
-    if (a.status!=='pursuing') return;
-    if (haversineM(a.lat,a.lon,badGuy.lat,badGuy.lon) < 8) {
-      addAlert('ok', '<strong>CAPTURED!</strong> '+a.cfg.label+' '+a.id
-        +' apprehended target. Response time: '
-        +document.getElementById('timer').textContent);
-      a.status = 'captured';
-      clearIncident();
-    }
+  if (!badGuy || !badGuy.active || captureCountdown > 0) return;
+  // Count pursuers within capture range (~25ft = 8m)
+  var onScene = agents.filter(function(a) {
+    return a.status === 'pursuing' && haversineM(a.lat, a.lon, badGuy.lat, badGuy.lon) < 8;
   });
+  if (onScene.length >= 2) {
+    // Two units on scene — start 30-second countdown
+    captureCountdown = 30;
+    addAlert('warn', '<strong>BACKUP ON SCENE</strong> — '+onScene[0].cfg.label+' '+onScene[0].id
+      +' + '+onScene[1].cfg.label+' '+onScene[1].id
+      +'. Containment in 30 seconds...');
+    document.getElementById('i-stat').textContent = 'CONTAINED';
+    clearInterval(captureTimerInt);
+    captureTimerInt = setInterval(function() {
+      captureCountdown--;
+      document.getElementById('i-stat').textContent = 'CAPTURE IN ' + captureCountdown + 's';
+      if (captureCountdown <= 0) {
+        clearInterval(captureTimerInt);
+        addAlert('ok', '<strong>TARGET CAPTURED!</strong> Response time: '
+          +document.getElementById('timer').textContent);
+        onScene.forEach(function(a){ a.status='captured'; });
+        clearIncident();
+      }
+    }, 1000);
+  } else if (onScene.length === 1) {
+    addAlert('info', onScene[0].cfg.label+' '+onScene[0].id+' on scene. Awaiting backup...');
+  }
 }
 
 // ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
