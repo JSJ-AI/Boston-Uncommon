@@ -296,6 +296,9 @@ function exitDeploy(){
 function placeBadGuy(lat,lng,type){
   exitDeploy();
   if (badGuy) clearIncident();
+  // Snap to nearest valid road node for this bad guy type
+  var snapped = roadNetworkReady ? snapToRoad(lat, lng, type) : { lat: lat, lon: lng };
+  lat = snapped.lat; lng = snapped.lon;
   badGuy = new BadGuy(type, lat, lng);
   badGuy.addToMap();
   var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
@@ -938,6 +941,21 @@ BadGuy.prototype.move = function() {
   this.updateMarker();
   document.getElementById('i-loc').textContent = this.lat.toFixed(4)+', '+this.lon.toFixed(4);
 };
+
+function snapToRoad(lat, lon, type) {
+  // Map bad guy type to agent type for road lookup
+  var agentType = (type === 'car') ? 'car' : 'officer'; // bike+person use officer roads
+  var pool = (roadGraph.nodesByType && roadGraph.nodesByType[agentType]) || roadGraph.nodeIds || [];
+  if (!pool.length) return { lat: lat, lon: lon };
+  var best = null, bestD = Infinity;
+  pool.forEach(function(nid) {
+    var n = roadGraph.nodes[nid];
+    if (!n) return;
+    var d = haversineM(n.lat, n.lon, lat, lon);
+    if (d < bestD) { bestD = d; best = n; }
+  });
+  return best ? { lat: best.lat, lon: best.lon } : { lat: lat, lon: lon };
+}
 
 function clearIncident() {
   if (badGuy) { badGuy.remove(); badGuy = null; }
