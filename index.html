@@ -150,8 +150,8 @@ body{display:flex;flex-direction:column;}
       <span class="psl">Assets Deployed</span>
       <div class="agrid">
         <div class="abadge"><span style="font-size:16px">&#128641;</span><div><div class="abn">Drones</div><div class="abc" id="c-dr">0/3</div></div></div>
-        <div class="abadge"><span style="font-size:16px">&#128659;</span><div><div class="abn">Vehicles</div><div class="abc" id="c-ca">0/5</div></div></div>
-        <div class="abadge"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/5</div></div></div>
+        <div class="abadge"><span style="font-size:16px">&#128659;</span><div><div class="abn">Vehicles</div><div class="abc" id="c-ca">0/10</div></div></div>
+        <div class="abadge"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
       </div>
     </div>
@@ -323,8 +323,8 @@ var BBOX = '42.338,-71.090,42.373,-71.042'; // ~1.2mi around Boston Common
 // Agent config
 var AGENT_CONFIG = {
   drone:   { count:3,  fovAngle:360, fovDist:61,  speed:44,  color:'#0284c7', label:'Drone'   },
-  car:     { count:5,  fovAngle:60,  fovDist:30,  speed:37,  color:'#16a34a', label:'Vehicle' },
-  bike:    { count:5,  fovAngle:360, fovDist:23,  speed:18,  color:'#ea580c', label:'Bike'    },
+  car:     { count:10,  fovAngle:60,  fovDist:30,  speed:37,  color:'#16a34a', label:'Vehicle' },
+  bike:    { count:10,  fovAngle:360, fovDist:23,  speed:18,  color:'#ea580c', label:'Bike'    },
   officer: { count:10, fovAngle:360, fovDist:23,  speed:5,   color:'#7c3aed', label:'Officer' }
 };
 // fovDist in metres (200ft=61m, 100ft=30m, 75ft=23m)
@@ -566,8 +566,8 @@ function doPlaceAgents() {
   agents.forEach(function(a) { a.remove(); });
   agents = [];
   var types = ['drone','drone','drone',
-               'car','car','car','car','car',
-               'bike','bike','bike','bike','bike',
+               'car','car','car','car','car','car','car','car','car','car',
+               'bike','bike','bike','bike','bike','bike','bike','bike','bike','bike',
                'officer','officer','officer','officer','officer',
                'officer','officer','officer','officer','officer','officer'];
   var idx = { drone:0, car:0, bike:0, officer:0 };
@@ -591,7 +591,7 @@ function doPlaceAgents() {
     agents.push(a);
   });
   map.flyTo({ center: [BOSTON_LNG, BOSTON_LAT], zoom: 14, duration: 1200 });
-  addAlert('ok', 'Units placed on road network: 3 drones, 5 vehicles, 5 bikes, 10 officers.');
+  addAlert('ok', 'Units placed on road network: 3 drones, 10 vehicles, 10 bikes, 10 officers.');
 }
 
 function placeAgents() {
@@ -645,11 +645,11 @@ document.getElementById('btn-start').onclick=function(){
   document.getElementById('btn-reset').disabled=false;
   document.getElementById('btn-deploy').disabled=false;
   document.getElementById('c-dr').textContent='3/3';
-  document.getElementById('c-ca').textContent='5/5';
-  document.getElementById('c-bi').textContent='5/5';
+  document.getElementById('c-ca').textContent='10/10';
+  document.getElementById('c-bi').textContent='10/10';
   document.getElementById('c-of').textContent='10/10';
   setPill('scan','Scanning');
-  addAlert('ok','<strong>Scenario started.</strong> Deploying units on road network...');
+  addAlert('ok','<strong>Scenario started.</strong> Deploying 3 drones, 10 vehicles, 10 bikes, 10 officers...');
   placeAgents();
 };
 document.getElementById('btn-deploy').onclick=function(){
@@ -663,8 +663,8 @@ document.getElementById('btn-reset').onclick=function(){
   document.getElementById('btn-deploy').disabled=true;
   document.getElementById('tpicker').style.display='none';
   document.getElementById('c-dr').textContent='0/3';
-  document.getElementById('c-ca').textContent='0/5';
-  document.getElementById('c-bi').textContent='0/5';
+  document.getElementById('c-ca').textContent='0/10';
+  document.getElementById('c-bi').textContent='0/10';
   document.getElementById('c-of').textContent='0/10';
   document.getElementById('i-type').textContent='None';
   document.getElementById('i-type').classList.add('none');
