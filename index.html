@@ -196,18 +196,7 @@ window.addEventListener('load', function() {
 
   map = new maplibregl.Map({
     container: 'map',
-    style: {
-      version: 8,
-      sources: {
-        esri: {
-          type: 'raster',
-          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256,
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China, NRCAN'
-        }
-      },
-      layers: [{ id: 'esri-base', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }]
-    },
+    style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
     center: CENTER,
     zoom: 14,
     minZoom: 12,
@@ -355,12 +344,12 @@ function buildGraph(data) {
       if (nodes[a].neighbors.indexOf(b) < 0) {
         nodes[a].neighbors.push(b);
         nodes[a].neighborHW = nodes[a].neighborHW || {};
-        nodes[a].neighborHW[b] = hw;
+        nodes[a].neighborHW[b] = { hw: hw, wayId: el.id };
       }
       if (nodes[b].neighbors.indexOf(a) < 0) {
         nodes[b].neighbors.push(a);
         nodes[b].neighborHW = nodes[b].neighborHW || {};
-        nodes[b].neighborHW[a] = hw;
+        nodes[b].neighborHW[a] = { hw: hw, wayId: el.id };
       }
       roadGraph.segments.push([a, b, hw]);
     }
@@ -377,7 +366,9 @@ function buildGraph(data) {
       var n = nodes[nid];
       if (!n || !n.neighborHW) return false;
       return Object.keys(n.neighborHW).some(function(nb) {
-        return !hwf || hwf.test(n.neighborHW[nb]);
+        var info = n.neighborHW[nb];
+        var hw = info && info.hw ? info.hw : info;
+        return !hwf || hwf.test(hw);
       });
     });
   });
@@ -545,6 +536,7 @@ function Agent(id, type, lat, lon, pt) {
   // startNode passed from randomRoadPoint — guarantees on-graph placement
   this.currentNode  = pt && pt.startNode ? pt.startNode : nearestNode(lat, lon);
   this.prevNode     = null;
+  this.currentWayId = null;  // OSM way agent is currently following
   this.lastTurnTime = 0;
   this.pauseUntil   = 0;
   this.targetNode   = this._pickTarget();
@@ -554,55 +546,77 @@ Agent.prototype._pickTarget = function() {
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
 
-  // Build candidate list: no backtracking, within home radius, correct highway type
   var self = this;
   var hwFilter = ALLOWED_HIGHWAYS[this.type];
+
+  // Build valid candidate list: no backtracking, within home radius, correct highway type
   var valid = n.neighbors.filter(function(nid) {
-    if (nid == self.prevNode) return false;              // no reversing
+    if (nid == self.prevNode) return false;
     var nb = roadGraph.nodes[nid];
     if (!nb) return false;
     if (haversineM(nb.lat, nb.lon, self.homeLat, self.homeLon) > HOME_RADIUS_M) return false;
     if (hwFilter) {
-      var hw = (n.neighborHW && n.neighborHW[nid]) || 'unclassified';
+      var info = n.neighborHW && n.neighborHW[nid];
+      var hw   = info && info.hw ? info.hw : (info || 'unclassified');
       if (!hwFilter.test(hw)) return false;
     }
     return true;
   });
 
-  // If no valid forward options, allow backtracking (dead end)
+  // Dead end — allow backtracking
   if (!valid.length) {
     valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
   }
   if (!valid.length) return this.currentNode;
+  if (valid.length === 1) {
+    // Only one option — take it, update wayId
+    var info = n.neighborHW && n.neighborHW[valid[0]];
+    this.currentWayId = info && info.wayId ? info.wayId : this.currentWayId;
+    return valid[0];
+  }
 
+  // ── WAY-ID PRIORITY: try to continue on the same OSM way ──────────────────
   var now = Date.now();
   var sinceLastTurn = now - (this.lastTurnTime || 0);
-
-  // Under 30s minimum — always continue straight
-  // Over 30s — 25% random turn chance per intersection
   var shouldTurn = sinceLastTurn >= 30000 && Math.random() < 0.25;
 
-  if (!shouldTurn && valid.length > 1) {
-    // Use approach vector (prevNode→currentNode) as reference — more accurate than stored bearing
-    var approachBearing = self.bearing;
-    if (self.prevNode && roadGraph.nodes[self.prevNode]) {
-      var prev = roadGraph.nodes[self.prevNode];
-      approachBearing = bearingDeg(prev.lat, prev.lon, self.lat, self.lon);
+  if (!shouldTurn && this.currentWayId) {
+    var sameWay = valid.filter(function(nid) {
+      var info = n.neighborHW && n.neighborHW[nid];
+      return info && info.wayId === self.currentWayId;
+    });
+    if (sameWay.length) {
+      // Continue on the exact same OSM way — guaranteed road alignment
+      return sameWay[Math.floor(Math.random() * sameWay.length)];
     }
-    // Pick neighbor most aligned with approach direction (smallest angular deviation)
+  }
+
+  // ── Current way ended or turn triggered — pick new direction ──────────────
+  if (!shouldTurn) {
+    // Use approach vector to go as straight as possible onto a new way
+    var approachBearing = this.bearing;
+    if (this.prevNode && roadGraph.nodes[this.prevNode]) {
+      var prev = roadGraph.nodes[this.prevNode];
+      approachBearing = bearingDeg(prev.lat, prev.lon, this.lat, this.lon);
+    }
     var bestNid = valid[0], bestDiff = 360;
     valid.forEach(function(nid) {
-      var nb = roadGraph.nodes[nid];
-      var nb_bearing = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
-      var diff = Math.abs(((nb_bearing - approachBearing) + 540) % 360 - 180);
+      var nb  = roadGraph.nodes[nid];
+      var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
+      var diff = Math.abs(((brg - approachBearing) + 540) % 360 - 180);
       if (diff < bestDiff) { bestDiff = diff; bestNid = nid; }
     });
+    var chosenInfo = n.neighborHW && n.neighborHW[bestNid];
+    this.currentWayId = chosenInfo && chosenInfo.wayId ? chosenInfo.wayId : null;
     return bestNid;
   }
 
-  // Random turn — reset timer
+  // Random turn — reset timer and wayId
   this.lastTurnTime = now;
-  return valid[Math.floor(Math.random() * valid.length)];
+  var chosen = valid[Math.floor(Math.random() * valid.length)];
+  var cInfo = n.neighborHW && n.neighborHW[chosen];
+  this.currentWayId = cInfo && cInfo.wayId ? cInfo.wayId : null;
+  return chosen;
 };
 
 Agent.prototype._makeSVG = function() {
@@ -785,7 +799,13 @@ function moveRoadAgent(agent, remainDist) {
       agent.lon = target.lon;
       agent.prevNode    = agent.currentNode;
       agent.currentNode = agent.targetNode;
-      agent.pauseUntil  = Date.now() + 3000; // 3-second intersection pause
+      // Update currentWayId from the edge we just arrived on
+      var arrNode = roadGraph.nodes[agent.prevNode];
+      if (arrNode && arrNode.neighborHW && arrNode.neighborHW[agent.currentNode]) {
+        var edgeInfo = arrNode.neighborHW[agent.currentNode];
+        agent.currentWayId = edgeInfo.wayId || agent.currentWayId;
+      }
+      agent.pauseUntil  = Date.now() + 3000;
       agent.targetNode  = agent._pickTarget();
       remainDist -= distToTarget;
       break; // pause takes effect next tick
