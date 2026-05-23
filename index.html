@@ -115,8 +115,6 @@ body{display:flex;flex-direction:column;}
   color:var(--mut);pointer-events:none;z-index:10;}
 .maplibregl-ctrl-attrib{background:rgba(10,12,16,.75) !important;color:var(--mut) !important;}
 .maplibregl-ctrl-attrib a{color:var(--mut) !important;}
-/* Boost map tile contrast and road visibility */
-.maplibregl-canvas{filter:contrast(1.2) brightness(1.08);}
 </style>
 </head>
 <body>
@@ -198,7 +196,7 @@ window.addEventListener('load', function() {
 
   map = new maplibregl.Map({
     container: 'map',
-    style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    style: 'https://basemaps.basemaps.cartocdn.com/gl/positron-gl-style/style.json',
     center: CENTER,
     zoom: 14,
     minZoom: 12,
