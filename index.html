@@ -196,7 +196,18 @@ window.addEventListener('load', function() {
 
   map = new maplibregl.Map({
     container: 'map',
-    style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    style: {
+      version: 8,
+      sources: {
+        esri: {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China, NRCAN'
+        }
+      },
+      layers: [{ id: 'esri-base', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }]
+    },
     center: CENTER,
     zoom: 14,
     minZoom: 12,
