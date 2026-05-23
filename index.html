@@ -209,7 +209,7 @@ window.addEventListener('load', function() {
       layers: [{ id: 'esri-base', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }]
     },
     center: CENTER,
-    zoom: 13,
+    zoom: 14,
     minZoom: 12,
     maxZoom: 18,
     maxBounds: [[-71.180, 42.278], [-70.952, 42.432]],
@@ -353,25 +353,34 @@ function buildGraph(data) {
   return roadGraph.nodeIds.length;
 }
 
-function randomRoadPoint() {
-  // If road graph loaded, pick random segment point
+function randomRoadPoint(centerLat, centerLon, radiusM) {
+  centerLat = centerLat || BOSTON_LAT;
+  centerLon = centerLon || BOSTON_LNG;
+  radiusM   = radiusM   || 1609; // default 1 mile
+
+  // Filter road segments within radius of center point
   if (roadGraph.segments.length) {
-    var seg = roadGraph.segments[Math.floor(Math.random() * roadGraph.segments.length)];
-    var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
-    if (a && b) {
+    var near = roadGraph.segments.filter(function(seg) {
+      var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
+      if (!a || !b) return false;
+      var midLat = (a.lat + b.lat) / 2, midLon = (a.lon + b.lon) / 2;
+      return haversineM(midLat, midLon, centerLat, centerLon) < radiusM;
+    });
+    if (near.length) {
+      var seg = near[Math.floor(Math.random() * near.length)];
+      var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
       var t = Math.random();
-      return {
-        lat: a.lat + (b.lat - a.lat) * t,
-        lon: a.lon + (b.lon - a.lon) * t,
-        nodeA: seg[0], nodeB: seg[1]
-      };
+      return { lat: a.lat+(b.lat-a.lat)*t, lon: a.lon+(b.lon-a.lon)*t,
+               nodeA: seg[0], nodeB: seg[1] };
     }
   }
-  // Fallback: random spread within ~0.8 mile radius of Boston Common
-  var r = 0.008, angle = Math.random() * 2 * Math.PI, dist = Math.random() * r;
+
+  // Fallback: uniform random point within circle
+  var angle = Math.random() * 2 * Math.PI;
+  var dist  = Math.sqrt(Math.random()) * radiusM / 111320;
   return {
-    lat: BOSTON_LAT + dist * Math.cos(angle),
-    lon: BOSTON_LNG + dist * Math.sin(angle) * 1.4
+    lat: centerLat + dist * Math.cos(angle),
+    lon: centerLon + dist * Math.sin(angle) / Math.cos(centerLat * Math.PI / 180)
   };
 }
 
@@ -422,7 +431,7 @@ async function fetchOverpass(mirrorIdx) {
 
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 function makeDroneSVG(color) {
-  return '<svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="14" height="14" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="14" cy="14" r="5" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
     '<line x1="14" y1="14" x2="4" y2="4" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="4" cy="4" r="3" fill="'+color+'" stroke="white" stroke-width="1"/>' +
@@ -436,7 +445,7 @@ function makeDroneSVG(color) {
 }
 
 function makeCarSVG(color) {
-  return '<svg width="18" height="28" viewBox="0 0 18 28" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="10" height="16" viewBox="0 0 18 28" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="2" y="6" width="14" height="18" rx="3" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
     '<rect x="4" y="9" width="10" height="8" rx="1" fill="rgba(255,255,255,0.3)"/>' +
     '<rect x="1" y="7" width="3" height="4" rx="1" fill="#888"/>' +
@@ -448,7 +457,7 @@ function makeCarSVG(color) {
 }
 
 function makeBikeSVG(color) {
-  return '<svg width="24" height="28" viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="12" height="16" viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="6" cy="21" r="5" fill="none" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="18" cy="21" r="5" fill="none" stroke="'+color+'" stroke-width="2"/>' +
     '<polyline points="6,21 10,14 14,14 18,21" fill="none" stroke="'+color+'" stroke-width="2"/>' +
@@ -459,7 +468,7 @@ function makeBikeSVG(color) {
 }
 
 function makeOfficerSVG(color) {
-  return '<svg width="20" height="28" viewBox="0 0 20 28" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="10" height="16" viewBox="0 0 20 28" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="10" cy="6" r="5" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
     '<path d="M4,12 Q10,10 16,12 L17,24 Q10,26 3,24 Z" fill="'+color+'" stroke="white" stroke-width="1"/>' +
     '<line x1="4" y1="14" x2="1" y2="22" stroke="'+color+'" stroke-width="2" stroke-linecap="round"/>' +
@@ -549,14 +558,14 @@ function placeAgents() {
                'officer','officer','officer','officer','officer','officer'];
   var idx = { drone:0, car:0, bike:0, officer:0 };
   types.forEach(function(type) {
-    var pt = randomRoadPoint();
+    var pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 1609);
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
     var a = new Agent(id, type, pt.lat, pt.lon);
     a.addToMap();
     agents.push(a);
   });
   // Fly to Boston Common at zoom 13 to show all agents
-  map.flyTo({ center: [BOSTON_LNG, BOSTON_LAT], zoom: 13, duration: 1200 });
+  map.flyTo({ center: [BOSTON_LNG, BOSTON_LAT], zoom: 14, duration: 1200 });
   addAlert('ok', 'Units placed: 3 drones, 5 vehicles, 5 bikes, 10 officers.');
 }
 
