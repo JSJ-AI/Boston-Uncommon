@@ -333,6 +333,14 @@ var AGENT_CONFIG = {
 // ── ROAD GRAPH ────────────────────────────────────────────────────────────────
 var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 
+// Highway types each agent type can use
+var ALLOWED_HIGHWAYS = {
+  car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
+  bike:    /^(primary|secondary|tertiary|residential|unclassified|trunk|.*_link|service|cycleway|path|footway|pedestrian|track)$/,
+  officer: /^(primary|secondary|tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track)$/,
+  drone:   null // aerial — no restriction
+};
+
 function buildGraph(data) {
   var nodes = {};
   data.elements.forEach(function(el) {
@@ -340,12 +348,13 @@ function buildGraph(data) {
   });
   data.elements.forEach(function(el) {
     if (el.type !== 'way') return;
+    var hw = (el.tags && el.tags.highway) || 'unclassified';
     for (var i = 0; i < el.nodes.length - 1; i++) {
       var a = el.nodes[i], b = el.nodes[i+1];
       if (!nodes[a] || !nodes[b]) continue;
       if (nodes[a].neighbors.indexOf(b) < 0) nodes[a].neighbors.push(b);
       if (nodes[b].neighbors.indexOf(a) < 0) nodes[b].neighbors.push(a);
-      roadGraph.segments.push([a, b]);
+      roadGraph.segments.push([a, b, hw]); // store highway type as 3rd element
     }
   });
   roadGraph.nodes = nodes;
@@ -353,16 +362,19 @@ function buildGraph(data) {
   return roadGraph.nodeIds.length;
 }
 
-function randomRoadPoint(centerLat, centerLon, radiusM) {
+function randomRoadPoint(centerLat, centerLon, radiusM, agentType) {
   centerLat = centerLat || BOSTON_LAT;
   centerLon = centerLon || BOSTON_LNG;
   radiusM   = radiusM   || 1609; // default 1 mile
 
   // Filter road segments within radius of center point
   if (roadGraph.segments.length) {
+    var hwFilter = agentType && ALLOWED_HIGHWAYS[agentType];
     var near = roadGraph.segments.filter(function(seg) {
       var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
       if (!a || !b) return false;
+      // Filter by highway type if agent has restrictions
+      if (hwFilter && seg[2] && !hwFilter.test(seg[2])) return false;
       var midLat = (a.lat + b.lat) / 2, midLon = (a.lon + b.lon) / 2;
       return haversineM(midLat, midLon, centerLat, centerLon) < radiusM;
     });
@@ -412,7 +424,7 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
 async function fetchOverpass(mirrorIdx) {
   mirrorIdx = mirrorIdx || 0;
   if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed');
-  var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link)$"]('+BBOX+'););out body;>;out skel qt;';
+  var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|footway|path|pedestrian|cycleway|track|service)$"]('+BBOX+'););out body;>;out skel qt;';
   try {
     var controller = new AbortController();
     var timer = setTimeout(function(){ controller.abort(); }, 20000);
@@ -571,7 +583,7 @@ function doPlaceAgents() {
       };
     } else {
       // Cars, bikes, officers must be on road segments
-      pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805);
+      pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805, type);
     }
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
     var a = new Agent(id, type, pt.lat, pt.lon);
