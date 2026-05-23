@@ -318,7 +318,7 @@ var OVERPASS_MIRRORS = [
   'https://overpass.openstreetmap.fr/api/interpreter'
 ];
 // 5-mile bounding box: S,W,N,E
-var BBOX = '42.278,-71.180,42.432,-70.952';
+var BBOX = '42.338,-71.090,42.373,-71.042'; // ~1.2mi around Boston Common
 
 // Agent config
 var AGENT_CONFIG = {
@@ -550,7 +550,7 @@ Agent.prototype.remove = function() {
 };
 
 // ── PLACE ALL AGENTS ──────────────────────────────────────────────────────────
-function placeAgents() {
+function doPlaceAgents() {
   agents.forEach(function(a) { a.remove(); });
   agents = [];
   var types = ['drone','drone','drone',
@@ -560,15 +560,43 @@ function placeAgents() {
                'officer','officer','officer','officer','officer','officer'];
   var idx = { drone:0, car:0, bike:0, officer:0 };
   types.forEach(function(type) {
-    var pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805);
+    var pt;
+    if (type === 'drone') {
+      // Drone: aerial, ignores roads — random within radius
+      var angle = Math.random() * 2 * Math.PI;
+      var dist  = Math.sqrt(Math.random()) * 805 / 111320;
+      pt = {
+        lat: BOSTON_LAT + dist * Math.cos(angle),
+        lon: BOSTON_LNG + dist * Math.sin(angle) / Math.cos(BOSTON_LAT * Math.PI / 180)
+      };
+    } else {
+      // Cars, bikes, officers must be on road segments
+      pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805);
+    }
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
     var a = new Agent(id, type, pt.lat, pt.lon);
     a.addToMap();
     agents.push(a);
   });
-  // Fly to Boston Common at zoom 13 to show all agents
   map.flyTo({ center: [BOSTON_LNG, BOSTON_LAT], zoom: 14, duration: 1200 });
-  addAlert('ok', 'Units placed: 3 drones, 5 vehicles, 5 bikes, 10 officers.');
+  addAlert('ok', 'Units placed on road network: 3 drones, 5 vehicles, 5 bikes, 10 officers.');
+}
+
+function placeAgents() {
+  if (roadNetworkReady) { doPlaceAgents(); return; }
+  // Wait up to 15s for road network then place
+  addAlert('warn', 'Waiting for road network before deploying units...');
+  var waited = 0;
+  var waitInt = setInterval(function() {
+    waited += 500;
+    if (roadNetworkReady) {
+      clearInterval(waitInt); doPlaceAgents();
+    } else if (waited >= 15000) {
+      clearInterval(waitInt);
+      addAlert('warn', 'Road network timeout — using approximate placement.');
+      doPlaceAgents();
+    }
+  }, 500);
 }
 
 function removeAllAgents() {
