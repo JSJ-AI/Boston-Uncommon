@@ -628,14 +628,119 @@ function loadRoadNetwork() {
     document.getElementById('rdstat').textContent =
       'Road network: ' + nodeCount + ' nodes loaded';
     document.getElementById('rdstat').style.color = '#22c55e';
-    addAlert('info', 'Road network loaded: ' + nodeCount + ' intersections, ' +
-      roadGraph.segments.length + ' segments.');
+    addAlert('info', 'Road network loaded: ' + nodeCount + ' nodes, ' +
+      roadGraph.segments.length + ' segments. Auto-starting scenario...');
+    autoStart();
   }).catch(function(e) {
     document.getElementById('rdstat').textContent = 'Road network: load failed';
     document.getElementById('rdstat').style.color = 'var(--bad)';
     addAlert('warn', 'Road network failed — agents will use fallback placement.');
     roadNetworkReady = false;
   });
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 3 — PATROL MOVEMENT ENGINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+var TICK_MS   = 500;    // ms per simulation tick
+var SIM_SPEED = 10;     // visual multiplier (10x real speed for visible movement)
+var HOME_RADIUS_M = 1609; // 1 mile patrol home radius
+var moveInterval = null;
+
+function startMovement() {
+  stopMovement();
+  moveInterval = setInterval(tick, TICK_MS);
+}
+
+function stopMovement() {
+  if (moveInterval) { clearInterval(moveInterval); moveInterval = null; }
+}
+
+function tick() {
+  agents.forEach(function(a) { moveAgent(a); });
+}
+
+function moveAgent(agent) {
+  // Distance to travel this tick (metres)
+  var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED;
+  if (agent.type === 'drone') {
+    moveDrone(agent, dist);
+  } else {
+    moveRoadAgent(agent, dist);
+  }
+  agent.updateMarker();
+}
+
+// ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
+function moveRoadAgent(agent, remainDist) {
+  var MAX_HOPS = 6;
+  for (var h = 0; h < MAX_HOPS && remainDist > 0.5; h++) {
+
+    // Ensure we have a valid target
+    if (!agent.targetNode || !roadGraph.nodes[agent.targetNode]) {
+      agent.targetNode = agent._pickTarget();
+      if (!agent.targetNode) break;
+    }
+
+    var target = roadGraph.nodes[agent.targetNode];
+    var distToTarget = haversineM(agent.lat, agent.lon, target.lat, target.lon);
+
+    // Update bearing toward current target
+    if (distToTarget > 1) {
+      agent.bearing = bearingDeg(agent.lat, agent.lon, target.lat, target.lon);
+    }
+
+    if (remainDist >= distToTarget) {
+      // Arrive at target node — advance and pick next
+      agent.lat = target.lat;
+      agent.lon = target.lon;
+      agent.currentNode = agent.targetNode;
+      agent.targetNode = agent._pickTarget();
+      remainDist -= distToTarget;
+    } else {
+      // Move partway along segment
+      var ratio = remainDist / Math.max(distToTarget, 1);
+      agent.lat += (target.lat - agent.lat) * ratio;
+      agent.lon += (target.lon - agent.lon) * ratio;
+      remainDist = 0;
+    }
+  }
+}
+
+// ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
+function moveDrone(agent, dist) {
+  var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
+
+  if (distFromHome > HOME_RADIUS_M * 0.9) {
+    // Near edge — steer back toward home with slight randomness
+    agent.bearing = (bearingDeg(agent.lat, agent.lon, agent.homeLat, agent.homeLon)
+                     + (Math.random() * 40 - 20) + 360) % 360;
+  } else if (!agent._droneDir || Math.random() < 0.04) {
+    // Random direction change ~every 25 ticks
+    agent.bearing = (agent.bearing + (Math.random() * 100 - 50) + 360) % 360;
+    agent._droneDir = true;
+  }
+
+  var rad = agent.bearing * Math.PI / 180;
+  agent.lat += (dist * Math.cos(rad)) / 111320;
+  agent.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+}
+
+// ── AUTO-START ────────────────────────────────────────────────────────────────
+function autoStart() {
+  scenarioOn = true;
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-reset').disabled = false;
+  document.getElementById('btn-deploy').disabled = false;
+  document.getElementById('c-dr').textContent = '3/3';
+  document.getElementById('c-ca').textContent = '10/10';
+  document.getElementById('c-bi').textContent = '10/10';
+  document.getElementById('c-of').textContent = '10/10';
+  setPill('scan', 'Scanning');
+  doPlaceAgents();
+  startMovement();
 }
 
 // ── CONTROLS ─────────────────────────────────────────────────────────────────
@@ -656,16 +761,10 @@ document.getElementById('btn-deploy').onclick=function(){
   document.getElementById('tpicker').style.display='block';
 };
 document.getElementById('btn-reset').onclick=function(){
-  scenarioOn=false;
+  // Stop movement and clear agents
+  stopMovement();
   removeAllAgents();
-  document.getElementById('btn-start').disabled=false;
-  document.getElementById('btn-reset').disabled=true;
-  document.getElementById('btn-deploy').disabled=true;
   document.getElementById('tpicker').style.display='none';
-  document.getElementById('c-dr').textContent='0/3';
-  document.getElementById('c-ca').textContent='0/10';
-  document.getElementById('c-bi').textContent='0/10';
-  document.getElementById('c-of').textContent='0/10';
   document.getElementById('i-type').textContent='None';
   document.getElementById('i-type').classList.add('none');
   document.getElementById('i-loc').textContent='--';
@@ -673,8 +772,12 @@ document.getElementById('btn-reset').onclick=function(){
   document.getElementById('i-stat').textContent='Standby';
   document.getElementById('i-stat').classList.add('none');
   document.getElementById('i-det').textContent='0';
-  resetTimer(); exitDeploy(); setPill('standby','Standby');
-  addAlert('info','Scenario reset. System standby.');
+  resetTimer(); exitDeploy();
+  addAlert('info','Resetting — new random deployment...');
+  // Re-deploy fresh and restart movement
+  setTimeout(function() {
+    if (roadNetworkReady) { autoStart(); }
+  }, 400);
 };
 </script>
 </body>
