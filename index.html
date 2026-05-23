@@ -1052,6 +1052,7 @@ function inFOV(agent) {
   return diff <= agent.cfg.fovAngle / 2;
 }
 
+function carUnit(a){ return a.cfg.label+' '+a.id; }
 function closestAgent(type) {
   var pool = agents.filter(function(a){ return a.type===type && a.status!=='captured'; });
   if (!pool.length) return null;
@@ -1065,15 +1066,26 @@ function closestAgent(type) {
 
 function dispatchPursuit(detector) {
   var dispatched = [];
-  ['car','bike','officer','drone'].forEach(function(type) {
+  // Always dispatch a car first — guaranteed
+  if (!pursuing['car'] || pursuing['car'].status !== 'pursuing') {
+    var carUnit = closestAgent('car');
+    if (carUnit) {
+      carUnit.status = 'pursuing';
+      pursuing['car'] = carUnit;
+      carUnit.targetNode = carUnit._pickPursuitTarget();
+      carUnit.pauseUntil = 0;
+      dispatched.push(carUnit.cfg.label + ' ' + carUnit.id);
+    }
+  }
+  // Dispatch closest bike, officer, and drone
+  ['bike','officer','drone'].forEach(function(type) {
     if (pursuing[type] && pursuing[type].status==='pursuing') return;
     var a = closestAgent(type);
     if (a) {
       a.status='pursuing';
       pursuing[type]=a;
-      // Immediately redirect toward bad guy — don't wait for next node arrival
       a.targetNode = a._pickPursuitTarget();
-      a.pauseUntil = 0; // cancel any intersection pause
+      a.pauseUntil = 0;
       dispatched.push(a.cfg.label+' '+a.id);
     }
   });
@@ -1107,18 +1119,22 @@ function checkDetection() {
 // ── CAPTURE CHECK ─────────────────────────────────────────────────────────────
 function checkCapture() {
   if (!badGuy || !badGuy.active || captureCountdown > 0) return;
-  // Count pursuers within capture range (~25ft = 8m)
+  // Capture requires: 1 car + 1 non-drone backup, both within 8m
   var onScene = agents.filter(function(a) {
     return a.status === 'pursuing' && haversineM(a.lat, a.lon, badGuy.lat, badGuy.lon) < 8;
   });
-  if (onScene.length >= 2) {
-    // Two units on scene — start 30-second countdown
+  var carOnScene    = onScene.filter(function(a){ return a.type === 'car'; });
+  var backupOnScene = onScene.filter(function(a){ return a.type !== 'car' && a.type !== 'drone'; });
+
+  if (carOnScene.length >= 1 && backupOnScene.length >= 1) {
+    // Car + non-drone backup both on scene — start 30-second countdown
     captureCountdown = 30;
-    addAlert('warn', '<strong>BACKUP ON SCENE</strong> — '+onScene[0].cfg.label+' '+onScene[0].id
-      +' + '+onScene[1].cfg.label+' '+onScene[1].id
+    addAlert('warn', '<strong>UNITS ON SCENE</strong> — '
+      +carUnit(carOnScene[0])+' + '+carUnit(backupOnScene[0])
       +'. Containment in 30 seconds...');
     document.getElementById('i-stat').textContent = 'CONTAINED';
     clearInterval(captureTimerInt);
+    var capturedUnits = carOnScene.concat(backupOnScene);
     captureTimerInt = setInterval(function() {
       captureCountdown--;
       document.getElementById('i-stat').textContent = 'CAPTURE IN ' + captureCountdown + 's';
@@ -1126,12 +1142,17 @@ function checkCapture() {
         clearInterval(captureTimerInt);
         addAlert('ok', '<strong>TARGET CAPTURED!</strong> Response time: '
           +document.getElementById('timer').textContent);
-        onScene.forEach(function(a){ a.status='captured'; });
+        capturedUnits.forEach(function(a){ a.status='captured'; });
         clearIncident();
       }
     }, 1000);
   } else if (onScene.length === 1) {
-    addAlert('info', onScene[0].cfg.label+' '+onScene[0].id+' on scene. Awaiting backup...');
+    var waiting = onScene[0];
+    if (waiting.type === 'car') {
+      addAlert('info', 'Vehicle '+waiting.id+' on scene. Awaiting non-drone backup...');
+    } else {
+      addAlert('info', waiting.cfg.label+' '+waiting.id+' on scene. Awaiting vehicle...');
+    }
   }
 }
 
