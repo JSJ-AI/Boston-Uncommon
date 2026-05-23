@@ -367,35 +367,48 @@ function buildGraph(data) {
   });
   roadGraph.nodes = nodes;
   roadGraph.nodeIds = Object.keys(nodes);
+
+  // Pre-compute valid node lists per agent type
+  // A node is valid for a type if it has at least one neighbor reachable via allowed highway
+  roadGraph.nodesByType = {};
+  ['car','bike','officer'].forEach(function(type) {
+    var hwf = ALLOWED_HIGHWAYS[type];
+    roadGraph.nodesByType[type] = roadGraph.nodeIds.filter(function(nid) {
+      var n = nodes[nid];
+      if (!n || !n.neighborHW) return false;
+      return Object.keys(n.neighborHW).some(function(nb) {
+        return !hwf || hwf.test(n.neighborHW[nb]);
+      });
+    });
+  });
+  // Drone can use any node
+  roadGraph.nodesByType['drone'] = roadGraph.nodeIds;
+
   return roadGraph.nodeIds.length;
 }
 
 function randomRoadPoint(centerLat, centerLon, radiusM, agentType) {
   centerLat = centerLat || BOSTON_LAT;
   centerLon = centerLon || BOSTON_LNG;
-  radiusM   = radiusM   || 1609; // default 1 mile
+  radiusM   = radiusM   || 1609;
 
-  // Filter road segments within radius of center point
-  if (roadGraph.segments.length) {
-    var hwFilter = agentType && ALLOWED_HIGHWAYS[agentType];
-    var near = roadGraph.segments.filter(function(seg) {
-      var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
-      if (!a || !b) return false;
-      // Filter by highway type if agent has restrictions
-      if (hwFilter && seg[2] && !hwFilter.test(seg[2])) return false;
-      var midLat = (a.lat + b.lat) / 2, midLon = (a.lon + b.lon) / 2;
-      return haversineM(midLat, midLon, centerLat, centerLon) < radiusM;
-    });
-    if (near.length) {
-      var seg = near[Math.floor(Math.random() * near.length)];
-      var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
-      var t = Math.random();
-      return { lat: a.lat+(b.lat-a.lat)*t, lon: a.lon+(b.lon-a.lon)*t,
-               nodeA: seg[0], nodeB: seg[1] };
-    }
+  // Use pre-computed per-type node list — snap to actual road nodes, never mid-segment
+  var pool = (agentType && roadGraph.nodesByType && roadGraph.nodesByType[agentType])
+             || roadGraph.nodeIds || [];
+
+  // Filter to nodes within radius
+  var near = pool.filter(function(nid) {
+    var n = roadGraph.nodes[nid];
+    return n && haversineM(n.lat, n.lon, centerLat, centerLon) < radiusM;
+  });
+
+  if (near.length) {
+    var nid = near[Math.floor(Math.random() * near.length)];
+    var n   = roadGraph.nodes[nid];
+    return { lat: n.lat, lon: n.lon, startNode: nid };
   }
 
-  // Fallback: uniform random point within circle
+  // Fallback: random point in circle if graph not ready
   var angle = Math.random() * 2 * Math.PI;
   var dist  = Math.sqrt(Math.random()) * radiusM / 111320;
   return {
@@ -509,7 +522,7 @@ function makeBadGuySVG(subtype, color) {
 // ── AGENT CLASS ───────────────────────────────────────────────────────────────
 var agents = [];
 
-function Agent(id, type, lat, lon) {
+function Agent(id, type, lat, lon, pt) {
   this.id      = id;
   this.type    = type;
   this.lat     = lat;
@@ -521,7 +534,8 @@ function Agent(id, type, lat, lon) {
   this.cfg     = AGENT_CONFIG[type];
   this.marker  = null;
   this.fovLayer= null;
-  this.currentNode  = nearestNode(lat, lon);
+  // startNode passed from randomRoadPoint — guarantees on-graph placement
+  this.currentNode  = pt && pt.startNode ? pt.startNode : nearestNode(lat, lon);
   this.prevNode     = null;
   this.lastTurnTime = 0;
   this.pauseUntil   = 0;
@@ -634,7 +648,7 @@ function doPlaceAgents() {
       pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805, type);
     }
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
-    var a = new Agent(id, type, pt.lat, pt.lon);
+    var a = new Agent(id, type, pt.lat, pt.lon, pt);
     a.addToMap();
     agents.push(a);
   });
