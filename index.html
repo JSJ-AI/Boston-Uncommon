@@ -196,7 +196,7 @@ window.addEventListener('load', function() {
 
   map = new maplibregl.Map({
     container: 'map',
-    style: 'https://tiles.openfreemap.org/styles/liberty',
+    style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
     center: CENTER,
     zoom: 14,
     minZoom: 12,
@@ -210,8 +210,6 @@ window.addEventListener('load', function() {
   map.addControl(new maplibregl.ScaleControl({maxWidth:120, unit:'imperial'}), 'bottom-right');
 
   map.on('load', function() {
-    // Proven fix: override OFM broken font hosting
-    map.setGlyphs('https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf');
     // Force resize after layout settles
     setTimeout(function(){ map.resize(); }, 200);
     document.getElementById('btn-start').disabled = false;
