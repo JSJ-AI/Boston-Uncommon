@@ -1102,7 +1102,7 @@ function showBadGuyPanel(type) {
     +'<span style="font-size:9px;color:var(--bad);border:1px solid var(--bad);padding:2px 6px;border-radius:10px;">ACTIVE</span></div>'
     +'<span class="psl">Speed (km/h)</span>'
     +'<input type="range" min="0" max="30" value="0" style="width:100%;accent-color:#ef4444;margin:4px 0 2px;" '
-    +'oninput="if(badGuy){badGuy.speed=+this.value;}document.getElementById('bg-spd').textContent=this.value"/>'
+    +'oninput="if(badGuy){badGuy.speed=+this.value;}document.getElementById(\'bg-spd\').textContent=this.value"/>'
     +'<div style="font-size:11px;color:var(--mut);margin-bottom:10px;">Speed: <strong id="bg-spd">0</strong> km/h</div>'
     +'<span class="psl">Direction</span>'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:4px;">'
