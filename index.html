@@ -352,9 +352,17 @@ function buildGraph(data) {
     for (var i = 0; i < el.nodes.length - 1; i++) {
       var a = el.nodes[i], b = el.nodes[i+1];
       if (!nodes[a] || !nodes[b]) continue;
-      if (nodes[a].neighbors.indexOf(b) < 0) nodes[a].neighbors.push(b);
-      if (nodes[b].neighbors.indexOf(a) < 0) nodes[b].neighbors.push(a);
-      roadGraph.segments.push([a, b, hw]); // store highway type as 3rd element
+      if (nodes[a].neighbors.indexOf(b) < 0) {
+        nodes[a].neighbors.push(b);
+        nodes[a].neighborHW = nodes[a].neighborHW || {};
+        nodes[a].neighborHW[b] = hw;
+      }
+      if (nodes[b].neighbors.indexOf(a) < 0) {
+        nodes[b].neighbors.push(a);
+        nodes[b].neighborHW = nodes[b].neighborHW || {};
+        nodes[b].neighborHW[a] = hw;
+      }
+      roadGraph.segments.push([a, b, hw]);
     }
   });
   roadGraph.nodes = nodes;
@@ -513,20 +521,55 @@ function Agent(id, type, lat, lon) {
   this.cfg     = AGENT_CONFIG[type];
   this.marker  = null;
   this.fovLayer= null;
-  this.currentNode = nearestNode(lat, lon);
-  this.targetNode  = this._pickTarget();
+  this.currentNode  = nearestNode(lat, lon);
+  this.prevNode     = null;
+  this.lastTurnTime = 0;
+  this.pauseUntil   = 0;
+  this.targetNode   = this._pickTarget();
 }
 
 Agent.prototype._pickTarget = function() {
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
-  // Stay within 1-mile (~1600m) of home
+
+  // Build candidate list: no backtracking, within home radius, correct highway type
+  var self = this;
+  var hwFilter = ALLOWED_HIGHWAYS[this.type];
   var valid = n.neighbors.filter(function(nid) {
+    if (nid == self.prevNode) return false;              // no reversing
     var nb = roadGraph.nodes[nid];
-    return nb && haversineM(nb.lat, nb.lon, this.homeLat, this.homeLon) < 1600;
-  }.bind(this));
-  var pool = valid.length ? valid : n.neighbors;
-  return pool[Math.floor(Math.random() * pool.length)];
+    if (!nb) return false;
+    if (haversineM(nb.lat, nb.lon, self.homeLat, self.homeLon) > HOME_RADIUS_M) return false;
+    if (hwFilter) {
+      var hw = (n.neighborHW && n.neighborHW[nid]) || 'unclassified';
+      if (!hwFilter.test(hw)) return false;
+    }
+    return true;
+  });
+
+  // If no valid forward options, allow backtracking (dead end)
+  if (!valid.length) {
+    valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
+  }
+  if (!valid.length) return this.currentNode;
+
+  // Within 30s of last turn — continue as straight as possible
+  var now = Date.now();
+  var sinceLastTurn = now - (this.lastTurnTime || 0);
+  if (sinceLastTurn < 30000 && valid.length > 1) {
+    var bestNid = valid[0], bestDiff = 360;
+    valid.forEach(function(nid) {
+      var nb = roadGraph.nodes[nid];
+      var nb_bearing = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
+      var diff = Math.abs(((nb_bearing - self.bearing) + 540) % 360 - 180);
+      if (diff < bestDiff) { bestDiff = diff; bestNid = nid; }
+    });
+    return bestNid;
+  }
+
+  // Time for a turn — pick random valid neighbor
+  this.lastTurnTime = now;
+  return valid[Math.floor(Math.random() * valid.length)];
 };
 
 Agent.prototype._makeSVG = function() {
@@ -675,10 +718,12 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
+  // Paused at intersection (e.g. 3-second stop)
+  if (agent.pauseUntil && Date.now() < agent.pauseUntil) return;
+
   var MAX_HOPS = 6;
   for (var h = 0; h < MAX_HOPS && remainDist > 0.5; h++) {
 
-    // Ensure we have a valid target
     if (!agent.targetNode || !roadGraph.nodes[agent.targetNode]) {
       agent.targetNode = agent._pickTarget();
       if (!agent.targetNode) break;
@@ -687,20 +732,21 @@ function moveRoadAgent(agent, remainDist) {
     var target = roadGraph.nodes[agent.targetNode];
     var distToTarget = haversineM(agent.lat, agent.lon, target.lat, target.lon);
 
-    // Update bearing toward current target
     if (distToTarget > 1) {
       agent.bearing = bearingDeg(agent.lat, agent.lon, target.lat, target.lon);
     }
 
     if (remainDist >= distToTarget) {
-      // Arrive at target node — advance and pick next
+      // Arrived at node — snap, remember where we came from, pause, pick next
       agent.lat = target.lat;
       agent.lon = target.lon;
+      agent.prevNode    = agent.currentNode;
       agent.currentNode = agent.targetNode;
-      agent.targetNode = agent._pickTarget();
+      agent.pauseUntil  = Date.now() + 3000; // 3-second intersection pause
+      agent.targetNode  = agent._pickTarget();
       remainDist -= distToTarget;
+      break; // pause takes effect next tick
     } else {
-      // Move partway along segment
       var ratio = remainDist / Math.max(distToTarget, 1);
       agent.lat += (target.lat - agent.lat) * ratio;
       agent.lon += (target.lon - agent.lon) * ratio;
@@ -717,10 +763,9 @@ function moveDrone(agent, dist) {
     // Near edge — steer back toward home with slight randomness
     agent.bearing = (bearingDeg(agent.lat, agent.lon, agent.homeLat, agent.homeLon)
                      + (Math.random() * 40 - 20) + 360) % 360;
-  } else if (!agent._droneDir || Math.random() < 0.04) {
-    // Random direction change ~every 25 ticks
-    agent.bearing = (agent.bearing + (Math.random() * 100 - 50) + 360) % 360;
-    agent._droneDir = true;
+  } else if (Math.random() < 0.03) {
+    // Gentle course change — max 60 degrees left or right, never reverse
+    agent.bearing = (agent.bearing + (Math.random() * 120 - 60) + 360) % 360;
   }
 
   var rad = agent.bearing * Math.PI / 180;
