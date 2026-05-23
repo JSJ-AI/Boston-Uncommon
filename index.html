@@ -553,10 +553,15 @@ Agent.prototype._pickTarget = function() {
   }
   if (!valid.length) return this.currentNode;
 
-  // Within 30s of last turn — continue as straight as possible
   var now = Date.now();
   var sinceLastTurn = now - (this.lastTurnTime || 0);
-  if (sinceLastTurn < 30000 && valid.length > 1) {
+
+  // Under 30s minimum — always continue straight
+  // Over 30s — continue straight most of the time, random turn with ~25% chance per intersection
+  var shouldTurn = sinceLastTurn >= 30000 && Math.random() < 0.25;
+
+  if (!shouldTurn && valid.length > 1) {
+    // Continue as straight as possible
     var bestNid = valid[0], bestDiff = 360;
     valid.forEach(function(nid) {
       var nb = roadGraph.nodes[nid];
@@ -567,7 +572,7 @@ Agent.prototype._pickTarget = function() {
     return bestNid;
   }
 
-  // Time for a turn — pick random valid neighbor
+  // Random turn — reset timer
   this.lastTurnTime = now;
   return valid[Math.floor(Math.random() * valid.length)];
 };
