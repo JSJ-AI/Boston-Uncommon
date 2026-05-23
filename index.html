@@ -862,7 +862,7 @@ function moveDrone(agent, dist) {
     }
     // Close enough — orbit tightly above bad guy
     if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
-    agent._orbitAngle = (agent._orbitAngle + 15) % 360;
+    agent._orbitAngle = (agent._orbitAngle + 5) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
     var oR   = 40; // 40m orbit radius
     var cosLat = Math.cos(badGuy.lat * Math.PI / 180);
