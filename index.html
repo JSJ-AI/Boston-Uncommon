@@ -560,7 +560,7 @@ function placeAgents() {
                'officer','officer','officer','officer','officer','officer'];
   var idx = { drone:0, car:0, bike:0, officer:0 };
   types.forEach(function(type) {
-    var pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 1609);
+    var pt = randomRoadPoint(BOSTON_LAT, BOSTON_LNG, 805);
     var id = type.charAt(0).toUpperCase() + (++idx[type]);
     var a = new Agent(id, type, pt.lat, pt.lon);
     a.addToMap();
