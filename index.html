@@ -209,7 +209,7 @@ window.addEventListener('load', function() {
       layers: [{ id: 'esri-base', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 19 }]
     },
     center: CENTER,
-    zoom: 14,
+    zoom: 13,
     minZoom: 12,
     maxZoom: 18,
     maxBounds: [[-71.180, 42.278], [-70.952, 42.432]],
@@ -354,15 +354,24 @@ function buildGraph(data) {
 }
 
 function randomRoadPoint() {
-  // Pick random segment, random point along it
-  if (!roadGraph.segments.length) return { lat: BOSTON_LAT, lon: BOSTON_LNG };
-  var seg = roadGraph.segments[Math.floor(Math.random() * roadGraph.segments.length)];
-  var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
-  var t = Math.random();
+  // If road graph loaded, pick random segment point
+  if (roadGraph.segments.length) {
+    var seg = roadGraph.segments[Math.floor(Math.random() * roadGraph.segments.length)];
+    var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
+    if (a && b) {
+      var t = Math.random();
+      return {
+        lat: a.lat + (b.lat - a.lat) * t,
+        lon: a.lon + (b.lon - a.lon) * t,
+        nodeA: seg[0], nodeB: seg[1]
+      };
+    }
+  }
+  // Fallback: random spread within ~0.8 mile radius of Boston Common
+  var r = 0.008, angle = Math.random() * 2 * Math.PI, dist = Math.random() * r;
   return {
-    lat: a.lat + (b.lat - a.lat) * t,
-    lon: a.lon + (b.lon - a.lon) * t,
-    nodeA: seg[0], nodeB: seg[1]
+    lat: BOSTON_LAT + dist * Math.cos(angle),
+    lon: BOSTON_LNG + dist * Math.sin(angle) * 1.4
   };
 }
 
@@ -396,10 +405,13 @@ async function fetchOverpass(mirrorIdx) {
   if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed');
   var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link)$"]('+BBOX+'););out body;>;out skel qt;';
   try {
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, 20000);
     var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
       method:'POST', body:'data='+encodeURIComponent(query),
-      signal: AbortSignal.timeout(20000)
+      signal: controller.signal
     });
+    clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
     return await r.json();
   } catch(e) {
@@ -543,8 +555,9 @@ function placeAgents() {
     a.addToMap();
     agents.push(a);
   });
-  addAlert('ok', 'Units placed on road network: ' +
-    '3 drones, 5 vehicles, 5 bikes, 10 officers.');
+  // Fly to Boston Common at zoom 13 to show all agents
+  map.flyTo({ center: [BOSTON_LNG, BOSTON_LAT], zoom: 13, duration: 1200 });
+  addAlert('ok', 'Units placed: 3 drones, 5 vehicles, 5 bikes, 10 officers.');
 }
 
 function removeAllAgents() {
