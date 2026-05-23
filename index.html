@@ -844,8 +844,17 @@ function moveRoadAgent(agent, remainDist) {
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
   if (agent.status === 'pursuing' && badGuy && badGuy.active) {
-    // Fly directly toward bad guy
-    agent.bearing = bearingDeg(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+    // Orbit tightly above bad guy — 40m radius circle, 15deg/tick
+    if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
+    agent._orbitAngle = (agent._orbitAngle + 15) % 360;
+    var oRad = agent._orbitAngle * Math.PI / 180;
+    var oR   = 40; // 40m orbit radius
+    var cosLat = Math.cos(badGuy.lat * Math.PI / 180);
+    agent.lat = badGuy.lat + (oR * Math.cos(oRad)) / 111320;
+    agent.lon = badGuy.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
+    agent.bearing = (agent._orbitAngle + 90) % 360; // face tangential
+    agent.updateMarker();
+    return; // skip normal movement
   } else {
     var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
     if (distFromHome > HOME_RADIUS_M * 0.9) {
@@ -1025,7 +1034,14 @@ function dispatchPursuit(detector) {
   ['car','bike','officer'].forEach(function(type) {
     if (pursuing[type] && pursuing[type].status==='pursuing') return;
     var a = closestAgent(type);
-    if (a) { a.status='pursuing'; pursuing[type]=a; dispatched.push(a.cfg.label+' '+a.id); }
+    if (a) {
+      a.status='pursuing';
+      pursuing[type]=a;
+      // Immediately redirect toward bad guy — don't wait for next node arrival
+      a.targetNode = a._pickPursuitTarget();
+      a.pauseUntil = 0; // cancel any intersection pause
+      dispatched.push(a.cfg.label+' '+a.id);
+    }
   });
   if (dispatched.length) {
     detectionCount++;
@@ -1074,12 +1090,11 @@ Agent.prototype._pickPursuitTarget = function() {
   if (!badGuy || !badGuy.active) { this.status='patrol'; return this._pickTarget(); }
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
-  var self=this, hwf=ALLOWED_HIGHWAYS[this.type];
+  var self=this;
+  // During pursuit: relax highway restrictions — all units can use any road to catch target
   var valid = n.neighbors.filter(function(nid) {
     if (nid==self.prevNode) return false;
-    var nb=roadGraph.nodes[nid]; if(!nb) return false;
-    if (hwf){ var info=n.neighborHW&&n.neighborHW[nid]; var hw=info&&info.hw?info.hw:(info||'unclassified'); if(!hwf.test(hw))return false; }
-    return true;
+    return roadGraph.nodes[nid];
   });
   if (!valid.length) valid=n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
   if (!valid.length) return this.currentNode;
