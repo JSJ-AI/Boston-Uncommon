@@ -336,8 +336,8 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
   car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
-  bike:    /^(tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
-  officer: /^(tertiary|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
+  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
+  officer: /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
 
@@ -401,6 +401,14 @@ function randomRoadPoint(centerLat, centerLon, radiusM, agentType) {
     var n = roadGraph.nodes[nid];
     return n && haversineM(n.lat, n.lon, centerLat, centerLon) < radiusM;
   });
+
+  // Expand radius up to 3x if too few valid nodes found
+  if (!near.length && pool.length) {
+    near = pool.filter(function(nid) {
+      var n = roadGraph.nodes[nid];
+      return n && haversineM(n.lat, n.lon, centerLat, centerLon) < radiusM * 3;
+    });
+  }
 
   if (near.length) {
     var nid = near[Math.floor(Math.random() * near.length)];
@@ -571,16 +579,22 @@ Agent.prototype._pickTarget = function() {
   var sinceLastTurn = now - (this.lastTurnTime || 0);
 
   // Under 30s minimum — always continue straight
-  // Over 30s — continue straight most of the time, random turn with ~25% chance per intersection
+  // Over 30s — 25% random turn chance per intersection
   var shouldTurn = sinceLastTurn >= 30000 && Math.random() < 0.25;
 
   if (!shouldTurn && valid.length > 1) {
-    // Continue as straight as possible
+    // Use approach vector (prevNode→currentNode) as reference — more accurate than stored bearing
+    var approachBearing = self.bearing;
+    if (self.prevNode && roadGraph.nodes[self.prevNode]) {
+      var prev = roadGraph.nodes[self.prevNode];
+      approachBearing = bearingDeg(prev.lat, prev.lon, self.lat, self.lon);
+    }
+    // Pick neighbor most aligned with approach direction (smallest angular deviation)
     var bestNid = valid[0], bestDiff = 360;
     valid.forEach(function(nid) {
       var nb = roadGraph.nodes[nid];
       var nb_bearing = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
-      var diff = Math.abs(((nb_bearing - self.bearing) + 540) % 360 - 180);
+      var diff = Math.abs(((nb_bearing - approachBearing) + 540) % 360 - 180);
       if (diff < bestDiff) { bestDiff = diff; bestNid = nid; }
     });
     return bestNid;
@@ -740,8 +754,15 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
-  // Paused at intersection (e.g. 3-second stop)
-  if (agent.pauseUntil && Date.now() < agent.pauseUntil) return;
+  // Paused at intersection — snap bearing to new target while waiting
+  if (agent.pauseUntil && Date.now() < agent.pauseUntil) {
+    if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
+      var snap = roadGraph.nodes[agent.targetNode];
+      agent.bearing = bearingDeg(agent.lat, agent.lon, snap.lat, snap.lon);
+      agent.updateMarker();
+    }
+    return;
+  }
 
   var MAX_HOPS = 6;
   for (var h = 0; h < MAX_HOPS && remainDist > 0.5; h++) {
