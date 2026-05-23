@@ -228,6 +228,7 @@ window.addEventListener('load', function() {
     document.getElementById('rdstat').style.color = '#22c55e';
     addAlert('info', 'Map grid online. Boston Common 5-mile operational area active.');
     addAlert('info', 'Click <strong>Start Scenario</strong> to deploy units.');
+    loadRoadNetwork();
   });
 
   map.on('mousemove', function(e) {
@@ -304,6 +305,275 @@ function placeBadGuy(lat,lng,type){
   addAlert('bad','<strong>INCIDENT DEPLOYED</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 2 — ROAD NETWORK + AGENT CLASSES + SVG ICONS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+var BOSTON_LAT = 42.3551, BOSTON_LNG = -71.0659;
+var OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter'
+];
+// 5-mile bounding box: S,W,N,E
+var BBOX = '42.278,-71.180,42.432,-70.952';
+
+// Agent config
+var AGENT_CONFIG = {
+  drone:   { count:3,  fovAngle:360, fovDist:61,  speed:44,  color:'#00d4ff', label:'Drone'   },
+  car:     { count:5,  fovAngle:60,  fovDist:30,  speed:37,  color:'#4ade80', label:'Vehicle' },
+  bike:    { count:5,  fovAngle:360, fovDist:23,  speed:18,  color:'#fb923c', label:'Bike'    },
+  officer: { count:10, fovAngle:360, fovDist:23,  speed:5,   color:'#facc15', label:'Officer' }
+};
+// fovDist in metres (200ft=61m, 100ft=30m, 75ft=23m)
+// speed in km/h approx (drone 44=27mph, car 37=23mph, bike 18=11mph, officer 5=3mph)
+
+// ── ROAD GRAPH ────────────────────────────────────────────────────────────────
+var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
+
+function buildGraph(data) {
+  var nodes = {};
+  data.elements.forEach(function(el) {
+    if (el.type === 'node') nodes[el.id] = { lat: el.lat, lon: el.lon, neighbors: [] };
+  });
+  data.elements.forEach(function(el) {
+    if (el.type !== 'way') return;
+    for (var i = 0; i < el.nodes.length - 1; i++) {
+      var a = el.nodes[i], b = el.nodes[i+1];
+      if (!nodes[a] || !nodes[b]) continue;
+      if (nodes[a].neighbors.indexOf(b) < 0) nodes[a].neighbors.push(b);
+      if (nodes[b].neighbors.indexOf(a) < 0) nodes[b].neighbors.push(a);
+      roadGraph.segments.push([a, b]);
+    }
+  });
+  roadGraph.nodes = nodes;
+  roadGraph.nodeIds = Object.keys(nodes);
+  return roadGraph.nodeIds.length;
+}
+
+function randomRoadPoint() {
+  // Pick random segment, random point along it
+  if (!roadGraph.segments.length) return { lat: BOSTON_LAT, lon: BOSTON_LNG };
+  var seg = roadGraph.segments[Math.floor(Math.random() * roadGraph.segments.length)];
+  var a = roadGraph.nodes[seg[0]], b = roadGraph.nodes[seg[1]];
+  var t = Math.random();
+  return {
+    lat: a.lat + (b.lat - a.lat) * t,
+    lon: a.lon + (b.lon - a.lon) * t,
+    nodeA: seg[0], nodeB: seg[1]
+  };
+}
+
+function nearestNode(lat, lon) {
+  var best = null, bestD = Infinity;
+  roadGraph.nodeIds.forEach(function(id) {
+    var n = roadGraph.nodes[id];
+    var d = (n.lat-lat)*(n.lat-lat) + (n.lon-lon)*(n.lon-lon);
+    if (d < bestD) { bestD = d; best = id; }
+  });
+  return best;
+}
+
+function haversineM(lat1, lon1, lat2, lon2) {
+  var R = 6371000, dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  var dLon = (lon2-lon1)*Math.PI/180;
+  var y = Math.sin(dLon)*Math.cos(lat2*Math.PI/180);
+  var x = Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180) -
+    Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
+}
+
+async function fetchOverpass(mirrorIdx) {
+  mirrorIdx = mirrorIdx || 0;
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed');
+  var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link)$"]('+BBOX+'););out body;>;out skel qt;';
+  try {
+    var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
+      method:'POST', body:'data='+encodeURIComponent(query),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('Overpass mirror '+mirrorIdx+' failed:', e.message);
+    return fetchOverpass(mirrorIdx + 1);
+  }
+}
+
+// ── SVG ICONS ─────────────────────────────────────────────────────────────────
+function makeDroneSVG(color) {
+  return '<svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="14" cy="14" r="5" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
+    '<line x1="14" y1="14" x2="4" y2="4" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="4" cy="4" r="3" fill="'+color+'" stroke="white" stroke-width="1"/>' +
+    '<line x1="14" y1="14" x2="24" y2="4" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="24" cy="4" r="3" fill="'+color+'" stroke="white" stroke-width="1"/>' +
+    '<line x1="14" y1="14" x2="4" y2="24" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="4" cy="24" r="3" fill="'+color+'" stroke="white" stroke-width="1"/>' +
+    '<line x1="14" y1="14" x2="24" y2="24" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="24" cy="24" r="3" fill="'+color+'" stroke="white" stroke-width="1"/>' +
+    '</svg>';
+}
+
+function makeCarSVG(color) {
+  return '<svg width="18" height="28" viewBox="0 0 18 28" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect x="2" y="6" width="14" height="18" rx="3" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
+    '<rect x="4" y="9" width="10" height="8" rx="1" fill="rgba(255,255,255,0.3)"/>' +
+    '<rect x="1" y="7" width="3" height="4" rx="1" fill="#888"/>' +
+    '<rect x="14" y="7" width="3" height="4" rx="1" fill="#888"/>' +
+    '<rect x="1" y="19" width="3" height="4" rx="1" fill="#888"/>' +
+    '<rect x="14" y="19" width="3" height="4" rx="1" fill="#888"/>' +
+    '<polygon points="9,1 12,6 6,6" fill="white" opacity="0.9"/>' +
+    '</svg>';
+}
+
+function makeBikeSVG(color) {
+  return '<svg width="24" height="28" viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="6" cy="21" r="5" fill="none" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="18" cy="21" r="5" fill="none" stroke="'+color+'" stroke-width="2"/>' +
+    '<polyline points="6,21 10,14 14,14 18,21" fill="none" stroke="'+color+'" stroke-width="2"/>' +
+    '<line x1="14" y1="14" x2="12" y2="8" stroke="'+color+'" stroke-width="2"/>' +
+    '<circle cx="12" cy="7" r="3" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
+    '<polygon points="12,2 14,7 10,7" fill="white" opacity="0.9"/>' +
+    '</svg>';
+}
+
+function makeOfficerSVG(color) {
+  return '<svg width="20" height="28" viewBox="0 0 20 28" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="10" cy="6" r="5" fill="'+color+'" stroke="white" stroke-width="1.5"/>' +
+    '<path d="M4,12 Q10,10 16,12 L17,24 Q10,26 3,24 Z" fill="'+color+'" stroke="white" stroke-width="1"/>' +
+    '<line x1="4" y1="14" x2="1" y2="22" stroke="'+color+'" stroke-width="2" stroke-linecap="round"/>' +
+    '<line x1="16" y1="14" x2="19" y2="22" stroke="'+color+'" stroke-width="2" stroke-linecap="round"/>' +
+    '<polygon points="10,1 13,6 7,6" fill="white" opacity="0.9"/>' +
+    '</svg>';
+}
+
+function makeBadGuySVG(subtype, color) {
+  color = color || '#ef4444';
+  if (subtype === 'car')    return makeCarSVG(color);
+  if (subtype === 'bike')   return makeBikeSVG(color);
+  return makeOfficerSVG(color);
+}
+
+// ── AGENT CLASS ───────────────────────────────────────────────────────────────
+var agents = [];
+
+function Agent(id, type, lat, lon) {
+  this.id      = id;
+  this.type    = type;
+  this.lat     = lat;
+  this.lon     = lon;
+  this.bearing = Math.random() * 360;
+  this.status  = 'patrol';  // patrol | pursuing | oncapture
+  this.homeLat = lat;
+  this.homeLon = lon;
+  this.cfg     = AGENT_CONFIG[type];
+  this.marker  = null;
+  this.fovLayer= null;
+  this.currentNode = nearestNode(lat, lon);
+  this.targetNode  = this._pickTarget();
+}
+
+Agent.prototype._pickTarget = function() {
+  var n = roadGraph.nodes[this.currentNode];
+  if (!n || !n.neighbors.length) return this.currentNode;
+  // Stay within 1-mile (~1600m) of home
+  var valid = n.neighbors.filter(function(nid) {
+    var nb = roadGraph.nodes[nid];
+    return nb && haversineM(nb.lat, nb.lon, this.homeLat, this.homeLon) < 1600;
+  }.bind(this));
+  var pool = valid.length ? valid : n.neighbors;
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+
+Agent.prototype._makeSVG = function() {
+  var cfg = this.cfg;
+  if (this.type === 'drone')   return makeDroneSVG(cfg.color);
+  if (this.type === 'car')     return makeCarSVG(cfg.color);
+  if (this.type === 'bike')    return makeBikeSVG(cfg.color);
+  if (this.type === 'officer') return makeOfficerSVG(cfg.color);
+  return makeOfficerSVG(cfg.color);
+};
+
+Agent.prototype.addToMap = function() {
+  var el = document.createElement('div');
+  el.style.cssText = 'cursor:pointer;filter:drop-shadow(0 1px 4px rgba(0,0,0,.7));';
+  el.innerHTML = this._makeSVG();
+  el.title = this.cfg.label + ' ' + this.id;
+  this.marker = new maplibregl.Marker({
+    element: el,
+    rotation: this.bearing,
+    rotationAlignment: 'map',
+    pitchAlignment: 'map'
+  }).setLngLat([this.lon, this.lat]).addTo(map);
+};
+
+Agent.prototype.updateMarker = function() {
+  if (!this.marker) return;
+  this.marker.setLngLat([this.lon, this.lat]);
+  if (typeof this.marker.setRotation === 'function') this.marker.setRotation(this.bearing);
+};
+
+Agent.prototype.remove = function() {
+  if (this.marker) { this.marker.remove(); this.marker = null; }
+};
+
+// ── PLACE ALL AGENTS ──────────────────────────────────────────────────────────
+function placeAgents() {
+  agents.forEach(function(a) { a.remove(); });
+  agents = [];
+  var types = ['drone','drone','drone',
+               'car','car','car','car','car',
+               'bike','bike','bike','bike','bike',
+               'officer','officer','officer','officer','officer',
+               'officer','officer','officer','officer','officer','officer'];
+  var idx = { drone:0, car:0, bike:0, officer:0 };
+  types.forEach(function(type) {
+    var pt = randomRoadPoint();
+    var id = type.charAt(0).toUpperCase() + (++idx[type]);
+    var a = new Agent(id, type, pt.lat, pt.lon);
+    a.addToMap();
+    agents.push(a);
+  });
+  addAlert('ok', 'Units placed on road network: ' +
+    '3 drones, 5 vehicles, 5 bikes, 10 officers.');
+}
+
+function removeAllAgents() {
+  agents.forEach(function(a) { a.remove(); });
+  agents = [];
+}
+
+// ── LOAD ROAD NETWORK ─────────────────────────────────────────────────────────
+var roadNetworkReady = false;
+
+function loadRoadNetwork() {
+  document.getElementById('rdstat').textContent = 'Road network: fetching...';
+  document.getElementById('rdstat').style.color = 'var(--warn)';
+  fetchOverpass(0).then(function(data) {
+    var nodeCount = buildGraph(data);
+    roadNetworkReady = true;
+    document.getElementById('rdstat').textContent =
+      'Road network: ' + nodeCount + ' nodes loaded';
+    document.getElementById('rdstat').style.color = '#22c55e';
+    addAlert('info', 'Road network loaded: ' + nodeCount + ' intersections, ' +
+      roadGraph.segments.length + ' segments.');
+  }).catch(function(e) {
+    document.getElementById('rdstat').textContent = 'Road network: load failed';
+    document.getElementById('rdstat').style.color = 'var(--bad)';
+    addAlert('warn', 'Road network failed — agents will use fallback placement.');
+    roadNetworkReady = false;
+  });
+}
+
 // ── CONTROLS ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-start').onclick=function(){
   if(scenarioOn) return;
@@ -315,14 +585,15 @@ document.getElementById('btn-start').onclick=function(){
   document.getElementById('c-bi').textContent='5/5';
   document.getElementById('c-of').textContent='10/10';
   setPill('scan','Scanning');
-  addAlert('ok','<strong>Scenario started.</strong> 3 drones, 5 vehicles, 5 bikes, 10 officers deployed.');
-  addAlert('info','All units entering patrol pattern. Deploy incident when ready.');
+  addAlert('ok','<strong>Scenario started.</strong> Deploying units on road network...');
+  placeAgents();
 };
 document.getElementById('btn-deploy').onclick=function(){
   document.getElementById('tpicker').style.display='block';
 };
 document.getElementById('btn-reset').onclick=function(){
   scenarioOn=false;
+  removeAllAgents();
   document.getElementById('btn-start').disabled=false;
   document.getElementById('btn-reset').disabled=true;
   document.getElementById('btn-deploy').disabled=true;
