@@ -213,6 +213,9 @@ window.addEventListener('load', function() {
     // Force resize after layout settles
     setTimeout(function(){ map.resize(); }, 200);
 
+    // Set up FOV polygon layers
+    setupFOVLayers();
+
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
       if (layer.type === 'symbol') {
@@ -292,15 +295,22 @@ function exitDeploy(){
 }
 function placeBadGuy(lat,lng,type){
   exitDeploy();
+  if (badGuy) clearIncident();
+  badGuy = new BadGuy(type, lat, lng);
+  badGuy.addToMap();
   var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
+  detectionCount=0;
+  document.getElementById('i-det').textContent='0';
   document.getElementById('i-type').textContent=labels[type];
   document.getElementById('i-type').classList.remove('none');
   document.getElementById('i-loc').textContent=lat.toFixed(4)+', '+lng.toFixed(4);
   document.getElementById('i-loc').classList.remove('none');
   document.getElementById('i-stat').textContent='Active';
   document.getElementById('i-stat').classList.remove('none');
+  incidentOn=true;
   startTimer(); setPill('active','Active Incident');
-  addAlert('bad','<strong>INCIDENT DEPLOYED</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
+  addAlert('bad','<strong>911 INCIDENT DEPLOYED</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
+  showBadGuyPanel(type);
 }
 
 
@@ -762,6 +772,11 @@ function stopMovement() {
 
 function tick() {
   agents.forEach(function(a) { moveAgent(a); });
+  if (badGuy && badGuy.active) badGuy.move();
+  tickCount++;
+  if (tickCount % 2 === 0) updateFOV();  // every other tick for performance
+  checkDetection();
+  checkCapture();
 }
 
 function moveAgent(agent) {
@@ -777,8 +792,8 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
-  // Paused at intersection — snap bearing to new target while waiting
-  if (agent.pauseUntil && Date.now() < agent.pauseUntil) {
+  // Skip intersection pause when pursuing — police don't stop at red lights in pursuit
+  if (agent.status !== 'pursuing' && agent.pauseUntil && Date.now() < agent.pauseUntil) {
     if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
       var snap = roadGraph.nodes[agent.targetNode];
       agent.bearing = bearingDeg(agent.lat, agent.lon, snap.lat, snap.lon);
@@ -808,14 +823,13 @@ function moveRoadAgent(agent, remainDist) {
       agent.lon = target.lon;
       agent.prevNode    = agent.currentNode;
       agent.currentNode = agent.targetNode;
-      // Update currentWayId from the edge we just arrived on
-      var arrNode = roadGraph.nodes[agent.prevNode];
-      if (arrNode && arrNode.neighborHW && arrNode.neighborHW[agent.currentNode]) {
-        var edgeInfo = arrNode.neighborHW[agent.currentNode];
-        agent.currentWayId = edgeInfo.wayId || agent.currentWayId;
+      var arrNode2 = roadGraph.nodes[agent.prevNode];
+      if (arrNode2 && arrNode2.neighborHW && arrNode2.neighborHW[agent.currentNode]) {
+        var edgeInfo2 = arrNode2.neighborHW[agent.currentNode];
+        agent.currentWayId = edgeInfo2.wayId || agent.currentWayId;
       }
       agent.pauseUntil  = Date.now() + 3000;
-      agent.targetNode  = agent._pickTarget();
+      agent.targetNode  = agent.status==='pursuing' ? agent._pickPursuitTarget() : agent._pickTarget();
       remainDist -= distToTarget;
       break; // pause takes effect next tick
     } else {
@@ -829,17 +843,18 @@ function moveRoadAgent(agent, remainDist) {
 
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
-  var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
-
-  if (distFromHome > HOME_RADIUS_M * 0.9) {
-    // Near edge — steer back toward home with slight randomness
-    agent.bearing = (bearingDeg(agent.lat, agent.lon, agent.homeLat, agent.homeLon)
-                     + (Math.random() * 40 - 20) + 360) % 360;
-  } else if (Math.random() < 0.03) {
-    // Gentle course change — max 60 degrees left or right, never reverse
-    agent.bearing = (agent.bearing + (Math.random() * 120 - 60) + 360) % 360;
+  if (agent.status === 'pursuing' && badGuy && badGuy.active) {
+    // Fly directly toward bad guy
+    agent.bearing = bearingDeg(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+  } else {
+    var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
+    if (distFromHome > HOME_RADIUS_M * 0.9) {
+      agent.bearing = (bearingDeg(agent.lat, agent.lon, agent.homeLat, agent.homeLon)
+                       + (Math.random() * 40 - 20) + 360) % 360;
+    } else if (Math.random() < 0.03) {
+      agent.bearing = (agent.bearing + (Math.random() * 120 - 60) + 360) % 360;
+    }
   }
-
   var rad = agent.bearing * Math.PI / 180;
   agent.lat += (dist * Math.cos(rad)) / 111320;
   agent.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
@@ -858,6 +873,249 @@ function autoStart() {
   setPill('scan', 'Scanning');
   doPlaceAgents();
   startMovement();
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STEP 4 — BAD GUY + FOV POLYGONS + DETECTION + PURSUIT + CAPTURE
+// ══════════════════════════════════════════════════════════════════════════════
+
+var badGuy       = null;
+var detectionCount = 0;
+var pursuing     = { car:null, bike:null, officer:null };
+var tickCount    = 0;
+var incidentOn   = false;
+
+// ── BAD GUY CLASS ─────────────────────────────────────────────────────────────
+function BadGuy(type, lat, lon) {
+  this.type    = type;
+  this.lat     = lat;
+  this.lon     = lon;
+  this.bearing = 0;
+  this.speed   = 0; // static by default
+  this.marker  = null;
+  this.active  = true;
+}
+
+BadGuy.prototype.addToMap = function() {
+  var el = document.createElement('div');
+  el.style.cssText = 'cursor:pointer;z-index:200;filter:drop-shadow(0 2px 8px rgba(239,68,68,.95));';
+  el.innerHTML = makeBadGuySVG(this.type, '#ef4444');
+  this.marker = new maplibregl.Marker({
+    element: el, rotationAlignment:'map', pitchAlignment:'map'
+  }).setLngLat([this.lon, this.lat]).addTo(map);
+};
+
+BadGuy.prototype.updateMarker = function() {
+  if (this.marker) this.marker.setLngLat([this.lon, this.lat]);
+};
+
+BadGuy.prototype.remove = function() {
+  if (this.marker) { this.marker.remove(); this.marker = null; }
+};
+
+BadGuy.prototype.move = function() {
+  if (this.speed <= 0) return;
+  var dist = (this.speed / 3.6) * (TICK_MS / 1000);
+  var rad  = this.bearing * Math.PI / 180;
+  this.lat += (dist * Math.cos(rad)) / 111320;
+  this.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(this.lat * Math.PI / 180));
+  // Disappear if off operational bounds
+  if (this.lon < -71.180 || this.lon > -70.952 || this.lat < 42.278 || this.lat > 42.432) {
+    clearIncident();
+    addAlert('warn', 'Incident left operational area. Deploy new incident when ready.');
+    return;
+  }
+  this.updateMarker();
+  document.getElementById('i-loc').textContent = this.lat.toFixed(4)+', '+this.lon.toFixed(4);
+};
+
+function clearIncident() {
+  if (badGuy) { badGuy.remove(); badGuy = null; }
+  agents.forEach(function(a) { if (a.status==='pursuing') a.status='patrol'; a._hasVisual=false; });
+  pursuing = { car:null, bike:null, officer:null };
+  incidentOn = false;
+  document.getElementById('bg-panel').style.display='none';
+  document.getElementById('i-type').textContent='None';
+  document.getElementById('i-type').classList.add('none');
+  document.getElementById('i-loc').textContent='--';
+  document.getElementById('i-stat').textContent='Standby';
+  document.getElementById('i-stat').classList.add('none');
+  stopTimer();
+  setPill('scan','Scanning');
+  // Clear FOV colors back to normal
+  updateFOV();
+}
+
+// ── FOV POLYGON HELPERS ───────────────────────────────────────────────────────
+function circlePoints(lat, lon, radiusM, steps) {
+  var cosLat = Math.cos(lat * Math.PI / 180);
+  var pts = [];
+  for (var i = 0; i <= steps; i++) {
+    var a = (i / steps) * 2 * Math.PI;
+    pts.push([lon + (radiusM * Math.sin(a)) / (111320 * cosLat),
+              lat + (radiusM * Math.cos(a)) / 111320]);
+  }
+  return pts;
+}
+
+function wedgePoints(lat, lon, bearing, angleDeg, radiusM, steps) {
+  var cosLat = Math.cos(lat * Math.PI / 180);
+  var half = angleDeg / 2;
+  var pts = [[lon, lat]];
+  for (var i = 0; i <= steps; i++) {
+    var a = ((bearing - half) + (i / steps) * angleDeg) * Math.PI / 180;
+    pts.push([lon + (radiusM * Math.sin(a)) / (111320 * cosLat),
+              lat + (radiusM * Math.cos(a)) / 111320]);
+  }
+  pts.push([lon, lat]);
+  return pts;
+}
+
+function agentFOVFeature(agent) {
+  var cfg     = agent.cfg;
+  var hot     = agent.status === 'pursuing';
+  var color   = hot ? '#ef4444' : cfg.color;
+  var opacity = hot ? 0.2 : 0.12;
+  var pts = cfg.fovAngle >= 360
+    ? circlePoints(agent.lat, agent.lon, cfg.fovDist, 28)
+    : wedgePoints(agent.lat, agent.lon, agent.bearing, cfg.fovAngle, cfg.fovDist, 16);
+  return { type:'Feature',
+    geometry:{ type:'Polygon', coordinates:[pts] },
+    properties:{ color:color, opacity:opacity } };
+}
+
+function setupFOVLayers() {
+  map.addSource('fov', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'fov-fill',    type:'fill',   source:'fov',
+    paint:{ 'fill-color':['get','color'], 'fill-opacity':['get','opacity'] } });
+  map.addLayer({ id:'fov-outline', type:'line',   source:'fov',
+    paint:{ 'line-color':['get','color'], 'line-opacity':0.5, 'line-width':1 } });
+}
+
+function updateFOV() {
+  var src = map.getSource('fov');
+  if (!src || !agents.length) return;
+  src.setData({ type:'FeatureCollection', features:agents.map(agentFOVFeature) });
+}
+
+// ── DETECTION ─────────────────────────────────────────────────────────────────
+function inFOV(agent) {
+  if (!badGuy || !badGuy.active) return false;
+  var dist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+  if (dist > agent.cfg.fovDist) return false;
+  if (agent.cfg.fovAngle >= 360) return true;
+  var diff = Math.abs(((bearingDeg(agent.lat,agent.lon,badGuy.lat,badGuy.lon) - agent.bearing)+540)%360-180);
+  return diff <= agent.cfg.fovAngle / 2;
+}
+
+function closestAgent(type) {
+  var pool = agents.filter(function(a){ return a.type===type && a.status!=='captured'; });
+  if (!pool.length) return null;
+  var best=pool[0], bestD=Infinity;
+  pool.forEach(function(a){
+    var d=haversineM(a.lat,a.lon,badGuy.lat,badGuy.lon);
+    if(d<bestD){bestD=d;best=a;}
+  });
+  return best;
+}
+
+function dispatchPursuit(detector) {
+  var dispatched = [];
+  ['car','bike','officer'].forEach(function(type) {
+    if (pursuing[type] && pursuing[type].status==='pursuing') return;
+    var a = closestAgent(type);
+    if (a) { a.status='pursuing'; pursuing[type]=a; dispatched.push(a.cfg.label+' '+a.id); }
+  });
+  if (dispatched.length) {
+    detectionCount++;
+    document.getElementById('i-det').textContent = detectionCount;
+    document.getElementById('i-stat').textContent = 'DETECTED';
+    addAlert('bad', '<strong>'+detector.cfg.label+' '+detector.id+' HAS VISUAL</strong>'
+      +' on '+({car:'Red Car',bike:'Red Bike',person:'Red Person'}[badGuy.type])
+      +'. Dispatching: '+dispatched.join(', ')+'.');
+    // Drone specifically announces coordinates to ground units
+    if (detector.type==='drone') {
+      addAlert('warn', 'Drone '+detector.id+' broadcasting position: '
+        +badGuy.lat.toFixed(4)+', '+badGuy.lon.toFixed(4));
+    }
+  }
+}
+
+function checkDetection() {
+  if (!badGuy || !badGuy.active) return;
+  agents.forEach(function(a) {
+    if (a.status==='captured') return;
+    if (inFOV(a)) {
+      if (!a._hasVisual) { a._hasVisual=true; dispatchPursuit(a); }
+    } else {
+      a._hasVisual = false;
+    }
+  });
+}
+
+// ── CAPTURE CHECK ─────────────────────────────────────────────────────────────
+function checkCapture() {
+  if (!badGuy || !badGuy.active) return;
+  agents.forEach(function(a) {
+    if (a.status!=='pursuing') return;
+    if (haversineM(a.lat,a.lon,badGuy.lat,badGuy.lon) < 8) {
+      addAlert('ok', '<strong>CAPTURED!</strong> '+a.cfg.label+' '+a.id
+        +' apprehended target. Response time: '
+        +document.getElementById('timer').textContent);
+      a.status = 'captured';
+      clearIncident();
+    }
+  });
+}
+
+// ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
+Agent.prototype._pickPursuitTarget = function() {
+  if (!badGuy || !badGuy.active) { this.status='patrol'; return this._pickTarget(); }
+  var n = roadGraph.nodes[this.currentNode];
+  if (!n || !n.neighbors.length) return this.currentNode;
+  var self=this, hwf=ALLOWED_HIGHWAYS[this.type];
+  var valid = n.neighbors.filter(function(nid) {
+    if (nid==self.prevNode) return false;
+    var nb=roadGraph.nodes[nid]; if(!nb) return false;
+    if (hwf){ var info=n.neighborHW&&n.neighborHW[nid]; var hw=info&&info.hw?info.hw:(info||'unclassified'); if(!hwf.test(hw))return false; }
+    return true;
+  });
+  if (!valid.length) valid=n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
+  if (!valid.length) return this.currentNode;
+  var best=valid[0], bestD=Infinity;
+  valid.forEach(function(nid){
+    var nb=roadGraph.nodes[nid];
+    var d=haversineM(nb.lat,nb.lon,badGuy.lat,badGuy.lon);
+    if(d<bestD){bestD=d;best=nid;}
+  });
+  return best;
+};
+
+// ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
+function showBadGuyPanel(type) {
+  var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
+  document.getElementById('bg-panel').style.display='block';
+  document.getElementById('bg-attrs').innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+    +'<span style="font-size:12px;font-weight:700;color:var(--bad)">'+labels[type]+'</span>'
+    +'<span style="font-size:9px;color:var(--bad);border:1px solid var(--bad);padding:2px 6px;border-radius:10px;">ACTIVE</span></div>'
+    +'<span class="psl">Speed (km/h)</span>'
+    +'<input type="range" min="0" max="30" value="0" style="width:100%;accent-color:#ef4444;margin:4px 0 2px;" '
+    +'oninput="if(badGuy){badGuy.speed=+this.value;}document.getElementById('bg-spd').textContent=this.value"/>'
+    +'<div style="font-size:11px;color:var(--mut);margin-bottom:10px;">Speed: <strong id="bg-spd">0</strong> km/h</div>'
+    +'<span class="psl">Direction</span>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:4px;">'
+    +compassBtn('NW',315)+compassBtn('N',0)+compassBtn('NE',45)
+    +compassBtn('W',270)+'<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--bad);font-size:18px;">⦿</div>'
+    +compassBtn('E',90)
+    +compassBtn('SW',225)+compassBtn('S',180)+compassBtn('SE',135)
+    +'</div>';
+}
+
+function compassBtn(label, bearing) {
+  return '<button class="btn bd" style="padding:5px;font-size:11px;font-weight:700;" '
+    +'onclick="if(badGuy)badGuy.bearing='+bearing+'">'+label+'</button>';
 }
 
 // ── CONTROLS ─────────────────────────────────────────────────────────────────
