@@ -783,8 +783,9 @@ function tick() {
 }
 
 function moveAgent(agent) {
-  // Distance to travel this tick (metres)
-  var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED;
+  // Pursuit mode: 50% speed boost
+  var speedMult = (agent.status === 'pursuing') ? 1.5 : 1.0;
+  var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
   } else {
