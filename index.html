@@ -212,6 +212,15 @@ window.addEventListener('load', function() {
   map.on('load', function() {
     // Force resize after layout settles
     setTimeout(function(){ map.resize(); }, 200);
+
+    // Darken all text/label layers for better street name readability
+    map.getStyle().layers.forEach(function(layer) {
+      if (layer.type === 'symbol') {
+        try { map.setPaintProperty(layer.id, 'text-color', '#111111'); } catch(e) {}
+        try { map.setPaintProperty(layer.id, 'text-halo-color', '#ffffff'); } catch(e) {}
+        try { map.setPaintProperty(layer.id, 'text-halo-width', 1.5); } catch(e) {}
+      }
+    });
     document.getElementById('btn-start').disabled = false;
     document.getElementById('rdstat').textContent = 'Road network: ready';
     document.getElementById('rdstat').style.color = '#22c55e';
