@@ -87,10 +87,10 @@ body{display:flex;flex-direction:column;}
 .abadge.off{opacity:.4;}
 .abadge.off::after{background:var(--mut);box-shadow:none;}
 .abadge.off .abn{text-decoration:line-through;}
-.abn{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;}
+.abn{font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
 .abc{font-size:15px;font-weight:700;}
-.agrid-hint{font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;
-  margin:-4px 0 6px;text-align:center;opacity:.7;}
+.agrid-hint{font-size:9px;color:#bae6fd;text-transform:uppercase;letter-spacing:.06em;
+  margin:-4px 0 6px;text-align:center;opacity:.8;}
 
 /* alerts */
 #alert-feed{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;}
@@ -951,7 +951,7 @@ function attachSensorPopup(el, getOpts) {
 
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 function makeDroneSVG(color) {
-  return '<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="14" height="14" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="13" cy="13" r="12" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="13" cy="13" r="4" fill="'+color+'"/>' +
     '<line x1="13" y1="13" x2="4" y2="4" stroke="'+color+'" stroke-width="1.5"/>' +
@@ -966,7 +966,7 @@ function makeDroneSVG(color) {
 }
 
 function makeCarSVG(color) {
-  return '<svg width="18" height="26" viewBox="0 0 18 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="10" height="14" viewBox="0 0 18 26" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="1" y="1" width="16" height="24" rx="3" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<rect x="3" y="5" width="12" height="16" rx="2" fill="'+color+'"/>' +
     '<rect x="4" y="7" width="10" height="6" rx="1" fill="rgba(255,255,255,0.4)"/>' +
@@ -979,7 +979,7 @@ function makeCarSVG(color) {
 }
 
 function makeBikeSVG(color) {
-  return '<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="14" height="14" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="13" cy="13" r="12" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="7" cy="16" r="4" fill="none" stroke="'+color+'" stroke-width="1.5"/>' +
     '<circle cx="19" cy="16" r="4" fill="none" stroke="'+color+'" stroke-width="1.5"/>' +
@@ -990,7 +990,7 @@ function makeBikeSVG(color) {
 }
 
 function makeOfficerSVG(color) {
-  return '<svg width="22" height="26" viewBox="0 0 22 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="12" height="14" viewBox="0 0 22 26" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="1" y="1" width="20" height="24" rx="10" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="11" cy="8" r="4" fill="'+color+'"/>' +
     '<path d="M5,14 Q11,12 17,14 L17,22 Q11,24 5,22 Z" fill="'+color+'"/>' +
