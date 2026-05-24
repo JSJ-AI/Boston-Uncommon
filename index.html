@@ -291,7 +291,7 @@ body{display:flex;flex-direction:column;}
     </div>
     <div class="ps">
       <span class="psl">Deploy Incident</span>
-      <button class="btn bd" id="btn-deploy" disabled>&#9760; Deploy Bad Guy</button>
+      <button class="btn bd" id="btn-deploy" disabled>&#9760; Deploy 911 Incident</button>
       <div id="tpicker" style="display:none;margin-top:8px;">
         <span class="psl">Incident Type</span>
         <button class="btn bd" onclick="pickType('car')">&#128663; Red Car</button>
@@ -346,6 +346,9 @@ body{display:flex;flex-direction:column;}
         <div class="ait">00:00:00</div>
         <div class="aim"><strong>System online.</strong> Awaiting scenario.</div>
       </div>
+    </div>
+    <div id="bg-panel" class="ps" style="display:none;">
+      <div id="bg-attrs"></div>
     </div>
     <div id="istatus">
       <div class="ir"><div class="irk">Incident</div><div class="irv none" id="i-type">None</div></div>
@@ -1873,7 +1876,7 @@ var gunshotMarker = null;
 
 function fireGunshot() {
   if (!badGuy || !badGuy.active) {
-    addAlert('warn', '<strong>No active target.</strong> Deploy bad guy first.');
+    addAlert('warn', '<strong>No active target.</strong> Deploy 911 incident first.');
     return;
   }
   if (!mics.length) {
