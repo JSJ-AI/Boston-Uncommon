@@ -125,7 +125,7 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'Inter',sans-serif;
   overflow:hidden;color:#fff;}
 .spop.cam-traf{border-color:#eab308;}
-.spop.cam-surv{border-color:#dc2626;}
+.spop.cam-surv{border-color:#2563eb;}
 .spop.ag-drone{border-color:#0284c7;}
 .spop.ag-car{border-color:#16a34a;}
 .spop.ag-bike{border-color:#ea580c;}
@@ -167,7 +167,7 @@ body{display:flex;flex-direction:column;}
   color:#fff;padding:3px 8px;border-radius:3px;font-size:10px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase;border-left:3px solid var(--acc);}
 #sensor-feed .sf-tag.cam-traf{border-left-color:#eab308;}
-#sensor-feed .sf-tag.cam-surv{border-left-color:#dc2626;}
+#sensor-feed .sf-tag.cam-surv{border-left-color:#2563eb;}
 #sensor-feed .sf-tag.ag-drone{border-left-color:#0284c7;}
 #sensor-feed .sf-tag.ag-car{border-left-color:#16a34a;}
 #sensor-feed .sf-tag.ag-bike{border-left-color:#ea580c;}
@@ -607,7 +607,8 @@ var AGENT_CONFIG = {
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
 // Public surveillance cameras (OSM man_made=surveillance, public-zone only)
-var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#dc2626' };
+// Color is blue (distinct from drone sky-blue) so they read as a separate sensor class
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#2563eb' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 var camerasVisible = true;  // toggle controlled by left-panel button
 
@@ -938,7 +939,7 @@ function attachSensorPopup(el, getOpts) {
 
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 function makeDroneSVG(color) {
-  return '<svg width="14" height="14" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="13" cy="13" r="12" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="13" cy="13" r="4" fill="'+color+'"/>' +
     '<line x1="13" y1="13" x2="4" y2="4" stroke="'+color+'" stroke-width="1.5"/>' +
@@ -953,7 +954,7 @@ function makeDroneSVG(color) {
 }
 
 function makeCarSVG(color) {
-  return '<svg width="10" height="14" viewBox="0 0 18 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="18" height="26" viewBox="0 0 18 26" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="1" y="1" width="16" height="24" rx="3" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<rect x="3" y="5" width="12" height="16" rx="2" fill="'+color+'"/>' +
     '<rect x="4" y="7" width="10" height="6" rx="1" fill="rgba(255,255,255,0.4)"/>' +
@@ -966,7 +967,7 @@ function makeCarSVG(color) {
 }
 
 function makeBikeSVG(color) {
-  return '<svg width="14" height="14" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
     '<circle cx="13" cy="13" r="12" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="7" cy="16" r="4" fill="none" stroke="'+color+'" stroke-width="1.5"/>' +
     '<circle cx="19" cy="16" r="4" fill="none" stroke="'+color+'" stroke-width="1.5"/>' +
@@ -977,7 +978,7 @@ function makeBikeSVG(color) {
 }
 
 function makeOfficerSVG(color) {
-  return '<svg width="12" height="14" viewBox="0 0 22 26" xmlns="http://www.w3.org/2000/svg">' +
+  return '<svg width="22" height="26" viewBox="0 0 22 26" xmlns="http://www.w3.org/2000/svg">' +
     '<rect x="1" y="1" width="20" height="24" rx="10" fill="white" stroke="'+color+'" stroke-width="2"/>' +
     '<circle cx="11" cy="8" r="4" fill="'+color+'"/>' +
     '<path d="M5,14 Q11,12 17,14 L17,22 Q11,24 5,22 Z" fill="'+color+'"/>' +
@@ -1583,28 +1584,16 @@ function setupCameraFOVLayer() {
 }
 
 function cameraFOVFeatures() {
-  // Traffic cams: render one 90° wedge per road approach (pulled from roadGraph
-  // neighbours), so coverage flows along streets the way a real fixed camera would.
-  // Surveillance cams (OSM man_made=surveillance): keep 4-wedge omni since we have
-  // no street-direction context for those.
+  // Both traffic and surveillance cams render directional wedges pulled from the
+  // road graph. Traffic cams use connected road neighbours (intersection geometry).
+  // Surveillance cams use the nearest road node (building-mounted CCTV pointing at street).
   var feats = [];
   cameras.forEach(function(cam) {
     var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-    // Detecting camera: swap color to red and bump opacity
     var hot     = cam._hasVisual;
     var color   = hot ? '#ef4444' : cfg.color;
-    var opacity = hot ? 0.22 : (cam.subtype === 'surveillance' ? 0.08 : 0.10);
-    if (cam.subtype === 'surveillance') {
-      [0, 90, 180, 270].forEach(function(b) {
-        var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
-        feats.push({ type:'Feature',
-          geometry:{ type:'Polygon', coordinates:[pts] },
-          properties:{ color: color, opacity: opacity } });
-      });
-      return;
-    }
-    // Traffic cam — derive bearings from road neighbours
-    var bearings = trafficCamBearings(cam);
+    var opacity = hot ? 0.22 : 0.10;
+    var bearings = cam.subtype === 'surveillance' ? surveillanceBearings(cam) : trafficCamBearings(cam);
     bearings.forEach(function(b) {
       var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
       feats.push({ type:'Feature',
@@ -1635,6 +1624,47 @@ function trafficCamBearings(cam) {
     bearings.push(b);
   });
   return bearings.length ? bearings : [0, 90, 180, 270];
+}
+
+// Find the nearest road graph node within maxDistM metres. Returns null if none.
+function nearestRoadNode(lat, lon, maxDistM) {
+  if (!roadGraph || !roadGraph.nodes) return null;
+  var best = null, bestD = Infinity;
+  // ~0.001° ≈ 110m at this latitude — bounding-box prefilter keeps the haversine
+  // pass cheap when there are 15k+ road nodes
+  var latDelta = maxDistM / 111000 * 1.4;
+  var lonDelta = maxDistM / (111000 * Math.cos(lat * Math.PI / 180)) * 1.4;
+  var latMin = lat - latDelta, latMax = lat + latDelta;
+  var lonMin = lon - lonDelta, lonMax = lon + lonDelta;
+  for (var id in roadGraph.nodes) {
+    var n = roadGraph.nodes[id];
+    if (n.lat < latMin || n.lat > latMax || n.lon < lonMin || n.lon > lonMax) continue;
+    var d = haversineM(lat, lon, n.lat, n.lon);
+    if (d < bestD && d <= maxDistM) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+// For a surveillance camera, return its bearing(s). Surveillance nodes are typically
+// NOT road network nodes (mounted on buildings, light poles, etc.), so we point the
+// wedge toward the nearest road — what a real building-mounted CCTV would do.
+// Result is cached on the cam object after first computation.
+function surveillanceBearings(cam) {
+  if (cam._cachedBearings) return cam._cachedBearings;
+  if (!roadNetworkReady) return [0, 90, 180, 270];  // pre-load fallback (omni)
+  // Maybe the cam IS on a road node (some are at intersections) — use neighbors if so
+  var node = roadGraph.nodes[cam.id];
+  if (node && node.neighbors && node.neighbors.length) {
+    return trafficCamBearings(cam);  // same per-road treatment
+  }
+  // Otherwise, find nearest road within 80m and point toward it
+  var nearest = nearestRoadNode(cam.lat, cam.lon, 80);
+  if (!nearest) {
+    cam._cachedBearings = [0, 90, 180, 270];  // no nearby road, omni fallback
+    return cam._cachedBearings;
+  }
+  cam._cachedBearings = [bearingDeg(cam.lat, cam.lon, nearest.lat, nearest.lon)];
+  return cam._cachedBearings;
 }
 
 function updateCameraFOV() {
@@ -1948,7 +1978,7 @@ function inCameraFOV(cam) {
   var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
   var dist = haversineM(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
   if (dist > cfg.fovDist) return false;
-  var bearings = cam.subtype === 'surveillance' ? [0,90,180,270] : trafficCamBearings(cam);
+  var bearings = cam.subtype === 'surveillance' ? surveillanceBearings(cam) : trafficCamBearings(cam);
   var brgToBG  = bearingDeg(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
   var half = cfg.fovAngle / 2;
   return bearings.some(function(b) {
