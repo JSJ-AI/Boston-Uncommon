@@ -84,7 +84,7 @@ body{display:flex;flex-direction:column;}
 .abadge:hover{background:rgba(255,255,255,.04);border-color:var(--acc);}
 .abadge::after{content:'';position:absolute;top:5px;right:5px;width:6px;height:6px;
   border-radius:50%;background:var(--ok);box-shadow:0 0 4px var(--ok);}
-.abadge.off{opacity:.4;}
+.abadge.off{opacity:.6;}
 .abadge.off::after{background:var(--mut);box-shadow:none;}
 .abadge.off .abn{text-decoration:line-through;}
 .abn{font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
@@ -387,6 +387,9 @@ window.addEventListener('load', function() {
     setupFOVLayers();
     setupCameraFOVLayer();
     setupMicMeshLayer();
+    // Apply default visibility (traffic cams + mics start off) so badges
+    // reflect the off state and any prematurely-created markers are hidden
+    applyAssetVisibility();
 
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
@@ -620,10 +623,18 @@ var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#2563eb' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 // Unified visibility map — each badge in the asset grid toggles one of these.
 // Single source of truth for all on/off layer controls.
-var assetVisibility = {
+// Defaults: traffic cams and mics start OFF for a less-cluttered initial view;
+// surveillance cams stay on (sparser, more interesting). Same defaults restored
+// on Reset for a consistent clean start.
+var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
-  'traffic-cams': true, 'surveillance-cams': true, mics: true
+  'traffic-cams': false, 'surveillance-cams': true, mics: false
 };
+var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
+function resetAssetVisibility() {
+  Object.assign(assetVisibility, DEFAULT_VISIBILITY);
+  applyAssetVisibility();
+}
 
 // Acoustic microphone mesh — 4×5 = 20 mics in operational area
 // 700m listening radius chosen so 3+ mics hear any point (triangulation coverage)
@@ -2294,6 +2305,7 @@ document.getElementById('btn-reset').onclick=function(){
   document.getElementById('i-stat').classList.add('none');
   document.getElementById('i-det').textContent='0';
   resetTimer(); exitDeploy();
+  resetAssetVisibility();
   addAlert('info','Resetting — new random deployment...');
   // Re-deploy fresh and restart movement
   setTimeout(function() {
