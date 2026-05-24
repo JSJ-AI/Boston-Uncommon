@@ -115,6 +115,44 @@ body{display:flex;flex-direction:column;}
   color:var(--mut);pointer-events:none;z-index:10;}
 .maplibregl-ctrl-attrib{background:rgba(10,12,16,.75) !important;color:var(--mut) !important;}
 .maplibregl-ctrl-attrib a{color:var(--mut) !important;}
+
+/* ── Sensor snapshot popup ────────────────────────────────────────────────── */
+.maplibregl-popup-content{background:transparent !important;padding:0 !important;
+  box-shadow:none !important;border:none !important;}
+.maplibregl-popup-tip{border-top-color:#000 !important;border-bottom-color:#000 !important;}
+.maplibregl-popup-close-button{display:none;}
+.spop{width:240px;background:#000;border:2px solid var(--acc);border-radius:6px;
+  box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'JetBrains Mono',monospace;
+  overflow:hidden;color:#fff;}
+.spop.cam-traf{border-color:#eab308;}
+.spop.cam-surv{border-color:#dc2626;}
+.spop.ag-drone{border-color:#0284c7;}
+.spop.ag-car{border-color:#16a34a;}
+.spop.ag-bike{border-color:#ea580c;}
+.spop.ag-officer{border-color:#7c3aed;}
+.spop-img{position:relative;width:100%;height:160px;background:#111 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="14" fill="none" stroke="%23334" stroke-width="2"/></svg>') center/40px no-repeat;
+  overflow:hidden;}
+.spop-img img{width:100%;height:100%;object-fit:cover;display:block;}
+.spop-img::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,transparent 35%,transparent 65%,rgba(0,0,0,.65) 100%);pointer-events:none;}
+.spop-img::after{content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0,rgba(255,255,255,.03) 1px,transparent 1px,transparent 3px);
+  pointer-events:none;}
+.spop-hd{position:absolute;top:6px;left:6px;right:6px;display:flex;justify-content:space-between;
+  align-items:center;font-size:9px;letter-spacing:.08em;font-weight:700;}
+.spop-rec{display:flex;align-items:center;gap:4px;color:#ef4444;}
+.spop-rec::before{content:'';width:6px;height:6px;border-radius:50%;background:#ef4444;
+  animation:spop-blink 1s infinite;}
+@keyframes spop-blink{0%,49%{opacity:1;}50%,100%{opacity:.2;}}
+.spop-src{color:#fff;background:rgba(0,0,0,.55);padding:2px 6px;border-radius:2px;}
+.spop-coords{position:absolute;bottom:6px;left:6px;font-size:9px;color:#cbd5e1;
+  background:rgba(0,0,0,.55);padding:2px 5px;border-radius:2px;letter-spacing:.05em;}
+.spop-ts{position:absolute;bottom:6px;right:6px;font-size:9px;color:#cbd5e1;
+  background:rgba(0,0,0,.55);padding:2px 5px;border-radius:2px;}
+.spop-meta{padding:8px 10px;background:#0a0c10;font-size:10px;line-height:1.5;
+  display:flex;justify-content:space-between;border-top:1px solid #222;}
+.spop-meta .sid{color:var(--mut);}
+.spop-meta .sd{color:var(--acc);font-weight:700;}
+.spop-meta .sd.far{color:var(--warn);}
 </style>
 </head>
 <body>
@@ -346,6 +384,8 @@ var AGENT_CONFIG = {
 
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
+// Public surveillance cameras (OSM man_made=surveillance, public-zone only)
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#dc2626' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 var camerasVisible = true;  // toggle controlled by left-panel button
 
@@ -510,6 +550,85 @@ async function fetchTrafficSignals(mirrorIdx) {
     console.warn('Signals mirror '+mirrorIdx+' failed:', e.message);
     return fetchTrafficSignals(mirrorIdx + 1);
   }
+}
+
+// Fetch OSM-mapped public surveillance cameras (community-tagged CCTV in public zones)
+async function fetchSurveillanceCameras(mirrorIdx) {
+  mirrorIdx = mirrorIdx || 0;
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (surveillance)');
+  // Filter to public/traffic/town zones to avoid plotting private home cameras
+  var query = '[out:json][timeout:25];(' +
+    'node["man_made"="surveillance"]["surveillance:zone"~"public|traffic|town|parking|transit"]('+BBOX+');' +
+    'node["man_made"="surveillance"]["surveillance"="public"]('+BBOX+');' +
+    ');out body;';
+  try {
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, 20000);
+    var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
+      method:'POST', body:'data='+encodeURIComponent(query),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('Surveillance mirror '+mirrorIdx+' failed:', e.message);
+    return fetchSurveillanceCameras(mirrorIdx + 1);
+  }
+}
+
+// ── SATELLITE SNAPSHOT (Esri World Imagery — public tiles, non-commercial use) ─
+// Used as the placeholder "camera feed" content. Not live — real aerial imagery of the
+// actual coordinates. License: free for educational/demo use; not for commercial deployment.
+function lonToTileX(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
+function latToTileY(lat, z) {
+  return Math.floor((1 - Math.log(Math.tan(lat*Math.PI/180) + 1/Math.cos(lat*Math.PI/180)) / Math.PI) / 2 * Math.pow(2, z));
+}
+function satelliteTileURL(lat, lon, zoom) {
+  zoom = zoom || 18;
+  var x = lonToTileX(lon, zoom), y = latToTileY(lat, zoom);
+  return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+zoom+'/'+y+'/'+x;
+}
+
+// Build sensor-feed popup HTML
+function sensorPopupHTML(opts) {
+  // opts: { lat, lon, label, sourceId, kindClass }
+  var imgUrl = satelliteTileURL(opts.lat, opts.lon, 18);
+  var coords = opts.lat.toFixed(5)+'\u00B0N, '+Math.abs(opts.lon).toFixed(5)+'\u00B0W';
+  var now    = new Date();
+  var ts     = now.toTimeString().slice(0,8);
+  var distHTML = '';
+  if (badGuy && badGuy.active) {
+    var d = haversineM(opts.lat, opts.lon, badGuy.lat, badGuy.lon);
+    var dFt = Math.round(d * 3.281);
+    var farClass = d > 200 ? ' far' : '';
+    distHTML = '<span class="sd'+farClass+'">'+dFt+' ft to target</span>';
+  } else {
+    distHTML = '<span class="sd" style="color:var(--mut);">no target</span>';
+  }
+  return '<div class="spop '+opts.kindClass+'">' +
+    '<div class="spop-img">' +
+      '<img src="'+imgUrl+'" alt="snapshot" onerror="this.style.display=\'none\'">' +
+      '<div class="spop-hd"><span class="spop-rec">REC</span><span class="spop-src">'+opts.label+'</span></div>' +
+      '<div class="spop-coords">'+coords+'</div>' +
+      '<div class="spop-ts">'+ts+'</div>' +
+    '</div>' +
+    '<div class="spop-meta"><span class="sid">'+opts.sourceId+'</span>'+distHTML+'</div>' +
+    '</div>';
+}
+
+// Attach hover popup to a marker DOM element
+var sensorPopup = null;
+function attachSensorPopup(el, getOpts) {
+  el.addEventListener('mouseenter', function() {
+    if (sensorPopup) sensorPopup.remove();
+    var o = getOpts();
+    sensorPopup = new maplibregl.Popup({ closeButton:false, closeOnClick:false, offset:14, maxWidth:'260px' })
+      .setLngLat([o.lon, o.lat]).setHTML(sensorPopupHTML(o)).addTo(map);
+  });
+  el.addEventListener('mouseleave', function() {
+    if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
+  });
 }
 
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
@@ -700,6 +819,15 @@ Agent.prototype.addToMap = function() {
     rotationAlignment: 'map',
     pitchAlignment: 'map'
   }).setLngLat([this.lon, this.lat]).addTo(map);
+
+  // Hover snapshot popup — same pattern as cameras
+  var self = this;
+  var kindMap = { drone:'ag-drone', car:'ag-car', bike:'ag-bike', officer:'ag-officer' };
+  var labelMap = { drone:'DRONE CAM', car:'VEHICLE CAM', bike:'BIKE CAM', officer:'OFFICER CAM' };
+  attachSensorPopup(el, function() {
+    return { lat: self.lat, lon: self.lon, label: labelMap[self.type] || 'CAM',
+      sourceId: self.cfg.label + ' #' + self.id, kindClass: kindMap[self.type] || '' };
+  });
 };
 
 Agent.prototype.updateMarker = function() {
@@ -781,11 +909,23 @@ function loadRoadNetwork() {
   fetchTrafficSignals(0).then(function(data) {
     var nodes = (data.elements || []).filter(function(el) { return el.type === 'node'; })
       .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
-    placeCameras(nodes);
+    placeCameras(nodes, 'traffic');
     addAlert('info', 'Traffic cameras online: ' + nodes.length + ' signalised intersections.');
   }).catch(function(e) {
     addAlert('warn', 'Traffic signals fetch failed — no cameras placed.');
     console.warn('Traffic signals fetch failed:', e);
+  });
+
+  // Public surveillance cameras (OSM crowd-sourced) — non-blocking, additive
+  fetchSurveillanceCameras(0).then(function(data) {
+    var nodes = (data.elements || []).filter(function(el) { return el.type === 'node'; })
+      .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
+    if (nodes.length) {
+      placeCameras(nodes, 'surveillance');
+      addAlert('info', 'Public surveillance cameras online: ' + nodes.length + ' nodes (OSM).');
+    }
+  }).catch(function(e) {
+    console.warn('Surveillance fetch failed:', e);
   });
 
   fetchOverpass(0).then(function(data) {
@@ -1109,11 +1249,12 @@ function cameraFOVFeatures() {
   // Each camera emits 4 wedge features (90° each at bearings 0/90/180/270).
   var feats = [];
   cameras.forEach(function(cam) {
+    var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     [0, 90, 180, 270].forEach(function(b) {
-      var pts = wedgePoints(cam.lat, cam.lon, b, CAMERA_CONFIG.fovAngle, CAMERA_CONFIG.fovDist, 12);
+      var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
       feats.push({ type:'Feature',
         geometry:{ type:'Polygon', coordinates:[pts] },
-        properties:{ color: CAMERA_CONFIG.color, opacity: 0.08 } });
+        properties:{ color: cfg.color, opacity: 0.08 } });
     });
   });
   return feats;
@@ -1126,18 +1267,29 @@ function updateCameraFOV() {
   src.setData({ type:'FeatureCollection', features: feats });
 }
 
-function placeCameras(nodes) {
-  // nodes: array of {id, lat, lon} from Overpass traffic_signals query
-  cameras = nodes.map(function(n) {
+function placeCameras(nodes, subtype) {
+  // nodes: array of {id, lat, lon} from Overpass query
+  // subtype: 'traffic' (default) or 'surveillance'
+  subtype = subtype || 'traffic';
+  var cfg = subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
+  var label = subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
+  var kindClass = subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
+  nodes.forEach(function(n) {
     var el = document.createElement('div');
     el.className = 'cam-marker';
     el.style.cursor = 'pointer';
-    el.innerHTML = makeCameraSVG(CAMERA_CONFIG.color);
-    el.title = 'Traffic Camera #' + n.id;
+    el.innerHTML = makeCameraSVG(cfg.color);
+    el.title = label + ' #' + n.id;
     var marker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([n.lon, n.lat]).addTo(map);
     if (!camerasVisible) el.style.display = 'none';
-    return { id: n.id, lat: n.lat, lon: n.lon, marker: marker, el: el };
+    var camObj = { id: n.id, lat: n.lat, lon: n.lon, marker: marker, el: el, subtype: subtype };
+    // Hover snapshot popup
+    attachSensorPopup(el, function() {
+      return { lat: camObj.lat, lon: camObj.lon, label: label,
+        sourceId: '#'+camObj.id, kindClass: kindClass };
+    });
+    cameras.push(camObj);
   });
   updateCameraFOV();
   document.getElementById('c-cam').textContent = cameras.length + '/' + cameras.length;
