@@ -202,6 +202,43 @@ body{display:flex;flex-direction:column;}
   border-color:#ec4899;}
 .btn.fw:hover{background:linear-gradient(135deg,#f472b6,#ec4899);}
 
+/* ── Joystick (bad guy directional control) ──────────────────────────────── */
+.joystick{position:relative;width:130px;height:130px;margin:8px auto;
+  background:radial-gradient(circle at center,var(--sur2) 0%,var(--sur) 70%);
+  border:2px solid var(--brd);border-radius:50%;touch-action:none;user-select:none;}
+.joystick::before{content:'N';position:absolute;top:2px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:var(--mut);font-weight:700;letter-spacing:.06em;}
+.joystick::after{content:'S';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:var(--mut);font-weight:700;letter-spacing:.06em;}
+.joystick .we{position:absolute;top:50%;font-size:9px;color:var(--mut);font-weight:700;letter-spacing:.06em;
+  transform:translateY(-50%);}
+.joystick .we.w{left:5px;}
+.joystick .we.e{right:5px;}
+.joystick .ring{position:absolute;inset:18px;border:1px dashed var(--brd);border-radius:50%;
+  pointer-events:none;}
+.joystick .center-mark{position:absolute;left:50%;top:50%;width:4px;height:4px;
+  background:var(--bad);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;}
+.joystick .stick{position:absolute;width:42px;height:42px;left:50%;top:50%;
+  background:radial-gradient(circle at 30% 30%,#fca5a5,var(--bad));border:2px solid #7f1d1d;
+  border-radius:50%;transform:translate(-50%,-50%);cursor:grab;
+  box-shadow:0 3px 8px rgba(239,68,68,.4),inset 0 1px 2px rgba(255,255,255,.4);
+  transition:transform .08s ease-out;touch-action:none;}
+.joystick .stick.grabbing{cursor:grabbing;transition:none;}
+.joystick .indicator{position:absolute;inset:0;pointer-events:none;}
+.joystick-readout{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);
+  font-family:'JetBrains Mono',monospace;margin-top:-2px;padding:0 2px;}
+.joystick-readout strong{color:var(--bad);font-weight:700;}
+
+/* ── Mode swap buttons (Car / Bike / Foot) ───────────────────────────────── */
+.mode-swap{display:flex;gap:4px;margin-top:8px;}
+.mode-swap .ms{flex:1;background:var(--sur2);border:1px solid var(--brd);color:var(--dim);
+  padding:6px 4px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600;
+  display:flex;flex-direction:column;align-items:center;gap:2px;transition:all .15s;}
+.mode-swap .ms:hover{background:rgba(239,68,68,.1);border-color:var(--bad);color:var(--txt);}
+.mode-swap .ms.active{background:rgba(239,68,68,.18);border-color:var(--bad);color:white;
+  box-shadow:inset 0 0 0 1px var(--bad);}
+.mode-swap .ms .ico{font-size:16px;}
+
 /* ── Alert pop animation ─────────────────────────────────────────────────── */
 @keyframes alert-in{
   0%{transform:translateY(-12px) scale(.94);opacity:0;}
@@ -524,6 +561,7 @@ function placeBadGuy(lat,lng,type){
   var snapped = roadNetworkReady ? snapToRoad(lat, lng, type) : { lat: lat, lon: lng };
   lat = snapped.lat; lng = snapped.lon;
   badGuy = new BadGuy(type, lat, lng);
+  badGuy.maxSpeed = MODE_MAX_SPEED[type] || 30;
   badGuy.addToMap();
   var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
   detectionCount=0;
@@ -1257,8 +1295,9 @@ function tick() {
   agents.forEach(function(a) { moveAgent(a); });
   if (badGuy && badGuy.active) badGuy.move();
   tickCount++;
-  if (tickCount % 2 === 0) updateFOV();  // every other tick for performance
+  if (tickCount % 2 === 0) { updateFOV(); updateCameraFOV(); }  // every other tick for performance
   checkDetection();
+  checkCameraDetection();
   checkCapture();
 }
 
@@ -1461,6 +1500,7 @@ function snapToRoad(lat, lon, type) {
 function clearIncident() {
   if (badGuy) { badGuy.remove(); badGuy = null; }
   agents.forEach(function(a) { if (a.status==='pursuing') a.status='patrol'; a._hasVisual=false; });
+  cameras.forEach(function(c) { c._hasVisual = false; });
   pursuing = { car:null, bike:null, officer:null };
   incidentOn = false;
   document.getElementById('bg-panel').style.display='none';
@@ -1550,12 +1590,16 @@ function cameraFOVFeatures() {
   var feats = [];
   cameras.forEach(function(cam) {
     var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
+    // Detecting camera: swap color to red and bump opacity
+    var hot     = cam._hasVisual;
+    var color   = hot ? '#ef4444' : cfg.color;
+    var opacity = hot ? 0.22 : (cam.subtype === 'surveillance' ? 0.08 : 0.10);
     if (cam.subtype === 'surveillance') {
       [0, 90, 180, 270].forEach(function(b) {
         var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
         feats.push({ type:'Feature',
           geometry:{ type:'Polygon', coordinates:[pts] },
-          properties:{ color: cfg.color, opacity: 0.08 } });
+          properties:{ color: color, opacity: opacity } });
       });
       return;
     }
@@ -1565,7 +1609,7 @@ function cameraFOVFeatures() {
       var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
       feats.push({ type:'Feature',
         geometry:{ type:'Polygon', coordinates:[pts] },
-        properties:{ color: cfg.color, opacity: 0.10 } });
+        properties:{ color: color, opacity: opacity } });
     });
   });
   return feats;
@@ -1896,6 +1940,37 @@ function checkDetection() {
   });
 }
 
+// Does the bad guy fall inside ANY of this camera's wedges?
+function inCameraFOV(cam) {
+  if (!badGuy || !badGuy.active) return false;
+  var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
+  var dist = haversineM(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  if (dist > cfg.fovDist) return false;
+  var bearings = cam.subtype === 'surveillance' ? [0,90,180,270] : trafficCamBearings(cam);
+  var brgToBG  = bearingDeg(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  var half = cfg.fovAngle / 2;
+  return bearings.some(function(b) {
+    var diff = Math.abs(((brgToBG - b) + 540) % 360 - 180);
+    return diff <= half;
+  });
+}
+
+function checkCameraDetection() {
+  if (!badGuy || !badGuy.active) return;
+  cameras.forEach(function(cam) {
+    if (inCameraFOV(cam)) {
+      if (!cam._hasVisual) {
+        cam._hasVisual = true;
+        // Build a synthetic "detector" for dispatchPursuit's alert plumbing
+        var camLabel = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
+        dispatchPursuit({ type: 'camera', id: cam.id, cfg: { label: camLabel } });
+      }
+    } else {
+      cam._hasVisual = false;
+    }
+  });
+}
+
 // ── CAPTURE CHECK ─────────────────────────────────────────────────────────────
 function checkCapture() {
   if (!badGuy || !badGuy.active || captureCountdown > 0) return;
@@ -1961,29 +2036,151 @@ Agent.prototype._pickPursuitTarget = function() {
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
 function showBadGuyPanel(type) {
   var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
+  var icons ={car:'\u{1F697}',bike:'\u{1F6B2}',person:'\u{1F6B6}'};
   document.getElementById('bg-panel').style.display='block';
   document.getElementById('bg-attrs').innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
-    +'<span style="font-size:12px;font-weight:700;color:var(--bad)">'+labels[type]+'</span>'
+    +'<span id="bg-label" style="font-size:12px;font-weight:700;color:var(--bad)">'+labels[type]+'</span>'
     +'<span style="font-size:9px;color:var(--bad);border:1px solid var(--bad);padding:2px 6px;border-radius:10px;">ACTIVE</span></div>'
-    +'<span class="psl">Speed (km/h)</span>'
-    +'<input type="range" min="0" max="30" value="0" style="width:100%;accent-color:#ef4444;margin:4px 0 2px;" '
-    +'oninput="if(badGuy){badGuy.speed=+this.value;}document.getElementById(\'bg-spd\').textContent=this.value"/>'
-    +'<div style="font-size:11px;color:var(--mut);margin-bottom:10px;">Speed: <strong id="bg-spd">0</strong> km/h</div>'
-    +'<span class="psl">Direction</span>'
+    +'<span class="psl">Mode</span>'
+    +'<div class="mode-swap">'
+    +'<div class="ms'+(type==='car'?' active':'')+'" data-mode="car" onclick="swapBadGuyMode(\'car\')"><span class="ico">\u{1F697}</span>Car</div>'
+    +'<div class="ms'+(type==='bike'?' active':'')+'" data-mode="bike" onclick="swapBadGuyMode(\'bike\')"><span class="ico">\u{1F6B2}</span>Bike</div>'
+    +'<div class="ms'+(type==='person'?' active':'')+'" data-mode="person" onclick="swapBadGuyMode(\'person\')"><span class="ico">\u{1F6B6}</span>Foot</div>'
+    +'</div>'
+    +'<div style="margin-top:14px;"><span class="psl">Joystick \u2014 drag to move</span></div>'
+    +'<div class="joystick" id="bg-joy">'
+      +'<span class="we w">W</span><span class="we e">E</span>'
+      +'<div class="ring"></div><div class="center-mark"></div>'
+      +'<div class="stick" id="bg-stick"></div>'
+    +'</div>'
+    +'<div class="joystick-readout"><span>Brg <strong id="bg-brg">0\u00B0</strong></span><span>Spd <strong id="bg-spd">0</strong> km/h</span></div>'
+    +'<details style="margin-top:10px;"><summary style="font-size:10px;color:var(--mut);cursor:pointer;letter-spacing:.06em;text-transform:uppercase;">Fine controls</summary>'
+    +'<div style="margin-top:8px;"><span class="psl">Max Speed (km/h)</span>'
+    +'<input type="range" min="0" max="'+(MODE_MAX_SPEED[type]||30)+'" value="0" id="bg-speed-slider" style="width:100%;accent-color:#ef4444;margin:4px 0 2px;" '
+    +'oninput="if(badGuy){badGuy.speed=Math.min(+this.value,badGuy.maxSpeed||30);}document.getElementById(\'bg-spd\').textContent=badGuy?badGuy.speed:0"/></div>'
+    +'<span class="psl" style="margin-top:6px;display:block;">Compass</span>'
     +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:4px;">'
     +compassBtn('NW',315)+compassBtn('N',0)+compassBtn('NE',45)
-    +compassBtn('W',270)+'<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--bad);font-size:18px;">⦿</div>'
+    +compassBtn('W',270)+'<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--bad);font-size:18px;">\u29BF</div>'
     +compassBtn('E',90)
     +compassBtn('SW',225)+compassBtn('S',180)+compassBtn('SE',135)
-    +'</div>'
+    +'</div></details>'
     +'<button class="btn fw" onclick="fireGunshot()" style="margin-top:14px;width:100%;padding:9px;font-size:12px;">&#128266; Fire Weapon</button>'
     +'<div style="font-size:10px;color:var(--mut);margin-top:4px;text-align:center;">Triggers acoustic event &middot; mic-mesh triangulates &middot; all units dispatch</div>';
+  attachJoystick();
 }
 
 function compassBtn(label, bearing) {
   return '<button class="btn bd" style="padding:5px;font-size:11px;font-weight:700;" '
-    +'onclick="if(badGuy)badGuy.bearing='+bearing+'">'+label+'</button>';
+    +'onclick="if(badGuy){badGuy.bearing='+bearing+';}">'+label+'</button>';
+}
+
+// ── JOYSTICK INPUT ───────────────────────────────────────────────────────────
+// Drag the stick to set bearing (atan2) and speed (radial distance, scaled to mode max).
+// Release leaves stick at last position — bad guy keeps moving in that direction/speed
+// until the user drags back to center.
+function attachJoystick() {
+  var joy   = document.getElementById('bg-joy');
+  var stick = document.getElementById('bg-stick');
+  if (!joy || !stick) return;
+  var rect, dragging = false, maxR;
+
+  function recalcRect() {
+    rect = joy.getBoundingClientRect();
+    maxR = rect.width / 2 - 18;  // clamp inside the ring
+  }
+
+  function pointFromEvent(ev) {
+    var p = ev.touches ? ev.touches[0] : ev;
+    return { x: p.clientX, y: p.clientY };
+  }
+
+  function updateFromPos(x, y) {
+    if (!badGuy) return;
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top  + rect.height / 2;
+    var dx = x - cx, dy = y - cy;
+    var mag = Math.sqrt(dx*dx + dy*dy);
+    if (mag > maxR) { dx = dx * maxR / mag; dy = dy * maxR / mag; mag = maxR; }
+    // Move the visual stick (centered transform offset)
+    stick.style.transform = 'translate(calc(-50% + '+dx+'px), calc(-50% + '+dy+'px))';
+    // Compass bearing: 0=N, 90=E, etc. atan2 returns -PI..PI from +x axis.
+    var bearing = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    // Speed scales 0..max by radial distance
+    var maxSpd = badGuy.maxSpeed || 30;
+    var speed = Math.round((mag / maxR) * maxSpd);
+    badGuy.bearing = bearing;
+    badGuy.speed = speed;
+    document.getElementById('bg-brg').textContent = Math.round(bearing) + '\u00B0';
+    document.getElementById('bg-spd').textContent = speed;
+    var slider = document.getElementById('bg-speed-slider');
+    if (slider) slider.value = speed;
+  }
+
+  function start(ev) {
+    recalcRect();
+    dragging = true;
+    stick.classList.add('grabbing');
+    var p = pointFromEvent(ev);
+    updateFromPos(p.x, p.y);
+    ev.preventDefault();
+  }
+  function move(ev) {
+    if (!dragging) return;
+    var p = pointFromEvent(ev);
+    updateFromPos(p.x, p.y);
+    ev.preventDefault();
+  }
+  function end() {
+    if (!dragging) return;
+    dragging = false;
+    stick.classList.remove('grabbing');
+    // Leave stick at last position; bad guy keeps moving
+  }
+
+  joy.addEventListener('mousedown',  start);
+  joy.addEventListener('touchstart', start, { passive: false });
+  document.addEventListener('mousemove', move);
+  document.addEventListener('touchmove', move, { passive: false });
+  document.addEventListener('mouseup',   end);
+  document.addEventListener('touchend',  end);
+}
+
+// ── BAD GUY MODE SWAP (Car ↔ Bike ↔ Foot) ────────────────────────────────────
+// Preserves position, bearing, and the active incident. Re-snaps to nearest
+// road that's valid for the new mode (cars need wider roads than bikes/peds).
+// Caps speed to the new mode's max. Timer keeps running per Q5 default.
+var MODE_MAX_SPEED = { car: 30, bike: 18, person: 6 };
+function swapBadGuyMode(newType) {
+  if (!badGuy || !badGuy.active) return;
+  if (badGuy.type === newType) return;
+  var oldType = badGuy.type;
+  // Re-snap location to nearest valid road for new mode (snapToRoad handles type mapping)
+  var snapped = roadNetworkReady ? snapToRoad(badGuy.lat, badGuy.lon, newType) : { lat: badGuy.lat, lon: badGuy.lon };
+  badGuy.type = newType;
+  badGuy.lat  = snapped.lat;
+  badGuy.lon  = snapped.lon;
+  badGuy.maxSpeed = MODE_MAX_SPEED[newType] || 30;
+  if (badGuy.speed > badGuy.maxSpeed) badGuy.speed = badGuy.maxSpeed;
+  var slider = document.getElementById('bg-speed-slider');
+  if (slider) {
+    slider.max = badGuy.maxSpeed;
+    slider.value = badGuy.speed;
+  }
+  // Recreate marker with new icon
+  if (badGuy.marker) badGuy.marker.remove();
+  badGuy.addToMap();
+  // Refresh panel + status display
+  var labels = { car:'Red Car', bike:'Red Bike', person:'Red Person' };
+  document.getElementById('bg-label').textContent = labels[newType];
+  document.getElementById('i-type').textContent = labels[newType];
+  // Toggle active state on mode buttons
+  document.querySelectorAll('.mode-swap .ms').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.mode === newType);
+  });
+  addAlert('warn', '<strong>Mode swap</strong>: ' + labels[oldType] + ' \u2192 ' + labels[newType] +
+    '. Max speed now ' + badGuy.maxSpeed + ' km/h.');
 }
 
 // ── CONTROLS ─────────────────────────────────────────────────────────────────
