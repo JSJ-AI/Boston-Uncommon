@@ -441,9 +441,9 @@ function nearestSensorTo(lat, lon) {
   return best;
 }
 
+var sensorFeedSeq = 0;  // race-condition guard for rapid sensor changes
 function renderSensorFeed(sensor) {
   var body  = document.getElementById('sf-body');
-  var empty = document.getElementById('sf-empty');
   var idEl  = document.getElementById('sf-id');
   var distEl= document.getElementById('sf-dist');
   var onEl  = document.getElementById('sf-on');
@@ -457,15 +457,27 @@ function renderSensorFeed(sensor) {
   }
   onEl.style.display = '';
   var coords = sensor.lat.toFixed(5)+'\u00B0N, '+Math.abs(sensor.lon).toFixed(5)+'\u00B0W';
-  // Only re-render the image if the sensor identity changed (avoid re-fetching tile every 2s)
+  // Re-fetch the image only when the closest sensor identity changes
   if (!sensorFeedCurrent || sensorFeedCurrent.sourceId !== sensor.sourceId) {
-    body.innerHTML =
-      '<span class="none">No aerial imagery available</span>' +
-      '<img src="'+satelliteTileURL(sensor.lat, sensor.lon, 18)+'" alt="aerial" ' +
-        'onerror="this.style.display=\'none\'">' +
-      '<div class="sf-tag '+sensor.kindClass+'">'+sensor.label+'</div>' +
-      '<div class="sf-attr">Aerial \u00A9 Esri</div>' +
-      '<div class="sf-coords"><span>AERIAL VIEW</span><span>'+coords+'</span></div>';
+    var mySeq = ++sensorFeedSeq;
+    var isDrone = sensor.kindClass === 'ag-drone';
+    // Immediate loading state (drones skip — aerial resolves synchronously below)
+    if (!isDrone) {
+      body.innerHTML =
+        '<span class="none">Loading street view&hellip;</span>' +
+        '<div class="sf-tag '+sensor.kindClass+'">'+sensor.label+'</div>' +
+        '<div class="sf-attr">\u2026</div>' +
+        '<div class="sf-coords"><span>LOADING</span><span>'+coords+'</span></div>';
+    }
+    getSensorImage(sensor.lat, sensor.lon, sensor.kindClass).then(function(img) {
+      if (mySeq !== sensorFeedSeq) return;  // sensor changed during fetch
+      body.innerHTML =
+        '<span class="none">No imagery available</span>' +
+        (img.url ? '<img src="'+img.url+'" alt="sensor view" onerror="this.style.display=\'none\'">' : '') +
+        '<div class="sf-tag '+sensor.kindClass+'">'+sensor.label+'</div>' +
+        '<div class="sf-attr">'+img.attribution+'</div>' +
+        '<div class="sf-coords"><span>'+img.sourceLabel+'</span><span>'+coords+'</span></div>';
+    });
     sensorFeedCurrent = sensor;
   }
   idEl.textContent = sensor.sourceId;
@@ -757,8 +769,17 @@ async function fetchSurveillanceCameras(mirrorIdx) {
 }
 
 // ── SATELLITE SNAPSHOT (Esri World Imagery — public tiles, non-commercial use) ─
-// Used as the placeholder "camera feed" content. Not live — real aerial imagery of the
-// actual coordinates. License: free for educational/demo use; not for commercial deployment.
+// ── SATELLITE TILE (Esri World Imagery) + MAPILLARY STREET-LEVEL ────────────
+// Drones get aerial (that's actually what a drone sees).
+// Ground-level sensors (traffic cams, surveillance, vehicles, bikes, officers)
+// get Mapillary street-level photos when available — falls back to Esri aerial
+// at locations with no Mapillary coverage. No synthetic placeholders.
+
+// Mapillary public client token, read-only scope. Embedded by design — these
+// tokens are intended for client-side use. Rate limit is per-token.
+var MAPILLARY_TOKEN = 'MLY|36544627538457863|a7941e3fd294d7b26ee053f03877c951';
+
+// Esri tile (aerial)
 function lonToTileX(lon, z) { return Math.floor((lon + 180) / 360 * Math.pow(2, z)); }
 function latToTileY(lat, z) {
   return Math.floor((1 - Math.log(Math.tan(lat*Math.PI/180) + 1/Math.cos(lat*Math.PI/180)) / Math.PI) / 2 * Math.pow(2, z));
@@ -769,12 +790,58 @@ function satelliteTileURL(lat, lon, zoom) {
   return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+zoom+'/'+y+'/'+x;
 }
 
-// Build sensor-feed popup HTML
-// Content is REAL Esri aerial imagery of the sensor's actual coordinates.
-// Not a synthetic CCTV feed — labeled honestly as "AERIAL VIEW" with attribution.
-function sensorPopupHTML(opts) {
+// Mapillary: query nearest image to a coord, return thumbnail URL or null
+// Cache key rounds lat/lon to ~10m so we don't re-fetch identical queries
+var mapillaryCache = {};   // key -> { url: string|null, ts: ms }
+var MAPILLARY_CACHE_TTL = 30 * 60 * 1000;  // 30 min
+function fetchMapillarySnapshot(lat, lon) {
+  var key = lat.toFixed(4) + '|' + lon.toFixed(4);
+  var hit = mapillaryCache[key];
+  if (hit && (Date.now() - hit.ts) < MAPILLARY_CACHE_TTL) {
+    return Promise.resolve(hit.url);
+  }
+  // bbox ~110m square (well under Mapillary's 0.01° limit)
+  var d = 0.0005;
+  var bbox = (lon - d) + ',' + (lat - d) + ',' + (lon + d) + ',' + (lat + d);
+  var url = 'https://graph.mapillary.com/images?fields=id,thumb_1024_url&bbox=' + bbox +
+    '&limit=1&access_token=' + MAPILLARY_TOKEN;
+  return fetch(url).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(data) {
+    var thumb = data && data.data && data.data[0] && data.data[0].thumb_1024_url;
+    mapillaryCache[key] = { url: thumb || null, ts: Date.now() };
+    return thumb || null;
+  }).catch(function(e) {
+    console.warn('Mapillary fetch failed:', e.message);
+    mapillaryCache[key] = { url: null, ts: Date.now() };
+    return null;
+  });
+}
+
+// Pick the right imagery source for a sensor type
+// kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf' | 'cam-surv'
+function getSensorImage(lat, lon, kindClass) {
+  // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees
+  if (kindClass === 'ag-drone') {
+    return Promise.resolve({
+      url: satelliteTileURL(lat, lon, 18),
+      sourceLabel: 'AERIAL VIEW',
+      attribution: 'Aerial \u00A9 Esri'
+    });
+  }
+  // Ground-level sensors: try Mapillary first, fall back to aerial honestly labelled
+  return fetchMapillarySnapshot(lat, lon).then(function(thumb) {
+    if (thumb) return { url: thumb, sourceLabel: 'STREET VIEW', attribution: 'Photo \u00A9 Mapillary' };
+    return { url: satelliteTileURL(lat, lon, 18),
+      sourceLabel: 'AERIAL (no street coverage)', attribution: 'Aerial \u00A9 Esri' };
+  });
+}
+
+// Build sensor popup HTML. Image source provided by caller (sync or async-resolved)
+function sensorPopupHTML(opts, img, loading) {
   // opts: { lat, lon, label, sourceId, kindClass }
-  var imgUrl = satelliteTileURL(opts.lat, opts.lon, 18);
+  // img: { url, sourceLabel, attribution } OR null when loading
   var coords = opts.lat.toFixed(5)+'\u00B0N, '+Math.abs(opts.lon).toFixed(5)+'\u00B0W';
   var distHTML = '';
   if (badGuy && badGuy.active) {
@@ -785,27 +852,48 @@ function sensorPopupHTML(opts) {
   } else {
     distHTML = '<span class="sd none">no target</span>';
   }
+  var sourceLabel = loading ? 'LOADING...' : (img ? img.sourceLabel : 'NO IMAGERY');
+  var attribution = loading ? '\u2026' : (img ? img.attribution : '');
+  var imgHTML;
+  if (loading) {
+    imgHTML = '<span class="none">Loading street view&hellip;</span>';
+  } else if (img && img.url) {
+    imgHTML = '<span class="none">No imagery available</span>' +
+      '<img src="'+img.url+'" alt="sensor view" onerror="this.style.display=\'none\'">';
+  } else {
+    imgHTML = '<span class="none">No imagery available</span>';
+  }
   return '<div class="spop '+opts.kindClass+'">' +
-    '<div class="spop-img">' +
-      '<span class="none">No aerial imagery available</span>' +
-      '<img src="'+imgUrl+'" alt="aerial view" onerror="this.style.display=\'none\'">' +
-      '<div class="spop-hd"><span class="spop-kind">'+opts.label+'</span><span class="spop-attr">Aerial \u00A9 Esri</span></div>' +
-      '<div class="spop-coords"><span>AERIAL VIEW</span><span>'+coords+'</span></div>' +
+    '<div class="spop-img">' + imgHTML +
+      '<div class="spop-hd"><span class="spop-kind">'+opts.label+'</span><span class="spop-attr">'+attribution+'</span></div>' +
+      '<div class="spop-coords"><span>'+sourceLabel+'</span><span>'+coords+'</span></div>' +
     '</div>' +
     '<div class="spop-meta"><span class="sid">'+opts.sourceId+'</span>'+distHTML+'</div>' +
     '</div>';
 }
 
-// Attach hover popup to a marker DOM element
+// Attach hover popup to a marker DOM element — async-loads Mapillary for street sensors
 var sensorPopup = null;
+var sensorPopupSeq = 0;  // race-condition guard for rapid hover changes
 function attachSensorPopup(el, getOpts) {
   el.addEventListener('mouseenter', function() {
     if (sensorPopup) sensorPopup.remove();
     var o = getOpts();
+    var mySeq = ++sensorPopupSeq;
+    // Show loading state immediately for ground sensors; aerial drones are synchronous
+    var isDrone = o.kindClass === 'ag-drone';
     sensorPopup = new maplibregl.Popup({ closeButton:false, closeOnClick:false, offset:14, maxWidth:'260px' })
-      .setLngLat([o.lon, o.lat]).setHTML(sensorPopupHTML(o)).addTo(map);
+      .setLngLat([o.lon, o.lat])
+      .setHTML(sensorPopupHTML(o, null, !isDrone))
+      .addTo(map);
+    // Resolve image then update (or render aerial right away for drones)
+    getSensorImage(o.lat, o.lon, o.kindClass).then(function(img) {
+      if (mySeq !== sensorPopupSeq || !sensorPopup) return;  // user moved on
+      sensorPopup.setHTML(sensorPopupHTML(o, img, false));
+    });
   });
   el.addEventListener('mouseleave', function() {
+    sensorPopupSeq++;  // invalidate pending fetches
     if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
   });
 }
