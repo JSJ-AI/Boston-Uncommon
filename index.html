@@ -153,7 +153,9 @@ body{display:flex;flex-direction:column;}
         <div class="abadge"><span style="font-size:16px">&#128659;</span><div><div class="abn">Vehicles</div><div class="abc" id="c-ca">0/10</div></div></div>
         <div class="abadge"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
+        <div class="abadge"><span style="font-size:16px">&#128247;</span><div><div class="abn">Cameras</div><div class="abc" id="c-cam">0/0</div></div></div>
       </div>
+      <button class="btn" id="btn-cam-toggle" onclick="toggleCameras()" style="margin-top:8px;font-size:11px;padding:6px 10px;">&#9673; Hide Cameras</button>
     </div>
     <div style="flex:1;"></div>
     <div class="ps" style="font-size:10px;color:var(--mut);line-height:1.9;">
@@ -215,6 +217,7 @@ window.addEventListener('load', function() {
 
     // Set up FOV polygon layers
     setupFOVLayers();
+    setupCameraFOVLayer();
 
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
@@ -340,6 +343,11 @@ var AGENT_CONFIG = {
 };
 // fovDist in metres (200ft=61m, 100ft=30m, 75ft=23m)
 // speed in km/h approx (drone 44=27mph, car 37=23mph, bike 18=11mph, officer 5=3mph)
+
+// Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
+var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
+var cameras = [];           // populated after Overpass traffic_signals fetch
+var camerasVisible = true;  // toggle controlled by left-panel button
 
 // ── ROAD GRAPH ────────────────────────────────────────────────────────────────
 var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
@@ -483,6 +491,27 @@ async function fetchOverpass(mirrorIdx) {
   }
 }
 
+// Fetch real traffic-signal intersections from OSM (one node per signalised intersection)
+async function fetchTrafficSignals(mirrorIdx) {
+  mirrorIdx = mirrorIdx || 0;
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (signals)');
+  var query = '[out:json][timeout:25];node["highway"="traffic_signals"]('+BBOX+');out body;';
+  try {
+    var controller = new AbortController();
+    var timer = setTimeout(function(){ controller.abort(); }, 20000);
+    var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
+      method:'POST', body:'data='+encodeURIComponent(query),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  } catch(e) {
+    console.warn('Signals mirror '+mirrorIdx+' failed:', e.message);
+    return fetchTrafficSignals(mirrorIdx + 1);
+  }
+}
+
 // ── SVG ICONS ─────────────────────────────────────────────────────────────────
 function makeDroneSVG(color) {
   return '<svg width="26" height="26" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg">' +
@@ -538,6 +567,16 @@ function makeBadGuySVG(subtype, color) {
   if (subtype === 'car')    return makeCarSVG(color);
   if (subtype === 'bike')   return makeBikeSVG(color);
   return makeOfficerSVG(color);
+}
+
+// Traffic camera icon — CCTV silhouette in amber
+function makeCameraSVG(color) {
+  return '<svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="11" cy="11" r="10" fill="white" stroke="'+color+'" stroke-width="1.8"/>' +
+    '<rect x="5" y="8" width="9" height="6" rx="1" fill="'+color+'"/>' +
+    '<polygon points="14,9 17,7 17,15 14,13" fill="'+color+'"/>' +
+    '<circle cx="9" cy="11" r="1.4" fill="white"/>' +
+    '</svg>';
 }
 
 // ── AGENT CLASS ───────────────────────────────────────────────────────────────
@@ -737,6 +776,18 @@ var roadNetworkReady = false;
 function loadRoadNetwork() {
   document.getElementById('rdstat').textContent = 'Road network: fetching...';
   document.getElementById('rdstat').style.color = 'var(--warn)';
+
+  // Kick off traffic-signal fetch in parallel — independent of road graph
+  fetchTrafficSignals(0).then(function(data) {
+    var nodes = (data.elements || []).filter(function(el) { return el.type === 'node'; })
+      .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
+    placeCameras(nodes);
+    addAlert('info', 'Traffic cameras online: ' + nodes.length + ' signalised intersections.');
+  }).catch(function(e) {
+    addAlert('warn', 'Traffic signals fetch failed — no cameras placed.');
+    console.warn('Traffic signals fetch failed:', e);
+  });
+
   fetchOverpass(0).then(function(data) {
     var nodeCount = buildGraph(data);
     roadNetworkReady = true;
@@ -1040,6 +1091,64 @@ function updateFOV() {
   var src = map.getSource('fov');
   if (!src || !agents.length) return;
   src.setData({ type:'FeatureCollection', features:agents.map(agentFOVFeature) });
+}
+
+// ── TRAFFIC CAMERAS (stationary, persistent FOV layer) ────────────────────────
+// One camera object per OSM traffic_signals node; renders as 4 directional
+// 90° wedges (N/E/S/W) that together cover 360°.
+function setupCameraFOVLayer() {
+  map.addSource('fov-cam', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  // Place camera FOVs UNDER the agent FOV layer so agent wedges stay readable
+  map.addLayer({ id:'fov-cam-fill',    type:'fill', source:'fov-cam',
+    paint:{ 'fill-color':['get','color'], 'fill-opacity':['get','opacity'] } }, 'fov-fill');
+  map.addLayer({ id:'fov-cam-outline', type:'line', source:'fov-cam',
+    paint:{ 'line-color':['get','color'], 'line-opacity':0.4, 'line-width':1, 'line-dasharray':[2,2] } }, 'fov-fill');
+}
+
+function cameraFOVFeatures() {
+  // Each camera emits 4 wedge features (90° each at bearings 0/90/180/270).
+  var feats = [];
+  cameras.forEach(function(cam) {
+    [0, 90, 180, 270].forEach(function(b) {
+      var pts = wedgePoints(cam.lat, cam.lon, b, CAMERA_CONFIG.fovAngle, CAMERA_CONFIG.fovDist, 12);
+      feats.push({ type:'Feature',
+        geometry:{ type:'Polygon', coordinates:[pts] },
+        properties:{ color: CAMERA_CONFIG.color, opacity: 0.08 } });
+    });
+  });
+  return feats;
+}
+
+function updateCameraFOV() {
+  var src = map.getSource('fov-cam');
+  if (!src) return;
+  var feats = camerasVisible ? cameraFOVFeatures() : [];
+  src.setData({ type:'FeatureCollection', features: feats });
+}
+
+function placeCameras(nodes) {
+  // nodes: array of {id, lat, lon} from Overpass traffic_signals query
+  cameras = nodes.map(function(n) {
+    var el = document.createElement('div');
+    el.className = 'cam-marker';
+    el.style.cursor = 'pointer';
+    el.innerHTML = makeCameraSVG(CAMERA_CONFIG.color);
+    el.title = 'Traffic Camera #' + n.id;
+    var marker = new maplibregl.Marker({ element: el, anchor:'center' })
+      .setLngLat([n.lon, n.lat]).addTo(map);
+    if (!camerasVisible) el.style.display = 'none';
+    return { id: n.id, lat: n.lat, lon: n.lon, marker: marker, el: el };
+  });
+  updateCameraFOV();
+  document.getElementById('c-cam').textContent = cameras.length + '/' + cameras.length;
+}
+
+function toggleCameras() {
+  camerasVisible = !camerasVisible;
+  cameras.forEach(function(c) { c.el.style.display = camerasVisible ? '' : 'none'; });
+  updateCameraFOV();
+  var btn = document.getElementById('btn-cam-toggle');
+  if (btn) btn.textContent = (camerasVisible ? '\u25C9 Hide' : '\u25CE Show') + ' Cameras';
 }
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
