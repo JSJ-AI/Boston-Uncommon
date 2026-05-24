@@ -184,6 +184,24 @@ body{display:flex;flex-direction:column;}
 #sensor-feed .sf-foot .dist.far{color:var(--warn);}
 #sensor-feed .sf-foot .dist.none{color:var(--mut);}
 
+/* ── Gunshot triangulation viz ───────────────────────────────────────────── */
+.mic-hearing svg circle:first-child{stroke-width:2.4;
+  filter:drop-shadow(0 0 6px #ec4899) drop-shadow(0 0 12px rgba(236,72,153,.6));}
+.gunshot-source{width:34px;height:34px;position:relative;pointer-events:none;}
+.gunshot-source .ring{position:absolute;inset:0;border:2px solid #ec4899;border-radius:50%;
+  animation:gs-ring 1.5s infinite ease-out;box-shadow:0 0 8px rgba(236,72,153,.5);}
+.gunshot-source .ring2{position:absolute;inset:0;border:2px solid #ec4899;border-radius:50%;
+  animation:gs-ring 1.5s infinite ease-out;animation-delay:.75s;}
+.gunshot-source .dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:10px;height:10px;background:#ec4899;border-radius:50%;
+  box-shadow:0 0 12px #ec4899,0 0 4px white inset;}
+@keyframes gs-ring{0%{transform:scale(.4);opacity:1;}100%{transform:scale(2.6);opacity:0;}}
+
+/* Fire Weapon button accent */
+.btn.fw{background:linear-gradient(135deg,#ec4899,#be185d);color:white;font-weight:700;
+  border-color:#ec4899;}
+.btn.fw:hover{background:linear-gradient(135deg,#f472b6,#ec4899);}
+
 /* ── Alert pop animation ─────────────────────────────────────────────────── */
 @keyframes alert-in{
   0%{transform:translateY(-12px) scale(.94);opacity:0;}
@@ -1357,6 +1375,7 @@ function clearIncident() {
   clearInterval(captureTimerInt);
   setPill('scan','Scanning');
   stopSensorFeed();
+  clearTriangulation();
   updateFOV();
 }
 
@@ -1488,6 +1507,13 @@ function setupMicMeshLayer() {
   // Below the camera FOV layer so it doesn't obscure cameras
   map.addLayer({ id:'mic-mesh-fill', type:'fill', source:'mic-mesh',
     paint:{ 'fill-color': MIC_CONFIG.color, 'fill-opacity': 0.08 } }, 'fov-cam-fill');
+
+  // Triangulation overlay — populated only when gunshot fires; hearing-mic circles only
+  map.addSource('mic-tri', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'mic-tri-fill', type:'fill', source:'mic-tri',
+    paint:{ 'fill-color': MIC_CONFIG.color, 'fill-opacity': 0.18 } }, 'fov-cam-fill');
+  map.addLayer({ id:'mic-tri-outline', type:'line', source:'mic-tri',
+    paint:{ 'line-color': MIC_CONFIG.color, 'line-opacity': 0.6, 'line-width': 1.4 } }, 'fov-cam-fill');
 }
 
 function micMeshFeatures() {
@@ -1564,6 +1590,100 @@ function toggleMicMesh() {
   updateMicMesh();
   var btn = document.getElementById('btn-mic-toggle');
   if (btn) btn.textContent = (micsVisible ? '\u25CC Hide' : '\u25CB Show') + ' Mic Mesh';
+}
+
+// ── GUNSHOT EVENT + TRIANGULATION + ACOUSTIC DISPATCH ────────────────────────
+// Model is intentionally simple: any mic whose listening zone (700m radius)
+// covers the incident location 'hears' the event. No decibel attenuation.
+// Triangulation = which mics heard it; the viz pins to the shot's lat/lon
+// and persists until capture (cleared via clearIncident).
+var gunshotMarker = null;
+
+function fireGunshot() {
+  if (!badGuy || !badGuy.active) {
+    addAlert('warn', '<strong>No active target.</strong> Deploy bad guy first.');
+    return;
+  }
+  if (!mics.length) {
+    addAlert('warn', 'Microphone mesh not yet deployed (waiting 3s after start).');
+    return;
+  }
+  // Find mics that hear it
+  var hearing = [];
+  mics.forEach(function(m) {
+    var d = haversineM(m.lat, m.lon, badGuy.lat, badGuy.lon);
+    if (d <= MIC_CONFIG.radius) hearing.push({ mic:m, dist:d });
+  });
+  var lat = badGuy.lat, lon = badGuy.lon;
+  if (hearing.length === 0) {
+    addAlert('warn', '<strong>🔊 GUNSHOT</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+      ' — no mic coverage. Event unconfirmed.');
+    return;
+  }
+  // Render persistent triangulation viz
+  renderTriangulation(hearing, lat, lon);
+  // Validation alert
+  var validated = hearing.length >= 3;
+  addAlert('bad', '<strong>🔊 GUNSHOT DETECTED</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+    ' — '+hearing.length+' mic'+(hearing.length===1?'':'s')+' picked up event. '+
+    (validated ? '<strong>Triangulation confirmed.</strong>' : 'Confidence: low ('+hearing.length+' < 3 mics).'));
+  // Dispatch — all unit types head to the shooter (current bad guy position)
+  dispatchAcoustic(validated);
+}
+
+function renderTriangulation(hearing, lat, lon) {
+  // Hearing-mic circles, semi-transparent — natural stacking = deeper hue in overlap zones
+  var feats = hearing.map(function(h) {
+    var pts = circlePoints(h.mic.lat, h.mic.lon, MIC_CONFIG.radius, 40);
+    return { type:'Feature', geometry:{ type:'Polygon', coordinates:[pts] }, properties:{} };
+  });
+  var src = map.getSource('mic-tri');
+  if (src) src.setData({ type:'FeatureCollection', features: feats });
+
+  // Highlight hearing mic icons
+  mics.forEach(function(m) { m.el.classList.remove('mic-hearing'); });
+  hearing.forEach(function(h) { h.mic.el.classList.add('mic-hearing'); });
+
+  // Drop pulsing source marker at gunshot location
+  if (gunshotMarker) gunshotMarker.remove();
+  var el = document.createElement('div');
+  el.className = 'gunshot-source';
+  el.innerHTML = '<div class="ring"></div><div class="ring2"></div><div class="dot"></div>';
+  el.title = 'Gunshot source';
+  gunshotMarker = new maplibregl.Marker({ element: el, anchor:'center' })
+    .setLngLat([lon, lat]).addTo(map);
+}
+
+function clearTriangulation() {
+  var src = map.getSource('mic-tri');
+  if (src) src.setData({ type:'FeatureCollection', features: [] });
+  mics.forEach(function(m) { m.el.classList.remove('mic-hearing'); });
+  if (gunshotMarker) { gunshotMarker.remove(); gunshotMarker = null; }
+}
+
+function dispatchAcoustic(validated) {
+  // Dispatch closest unit of each type — no FOV/visual requirement (passive acoustic)
+  var dispatched = [];
+  ['car','bike','officer','drone'].forEach(function(type) {
+    if (pursuing[type] && pursuing[type].status === 'pursuing') return;
+    var a = closestAgent(type);
+    if (a) {
+      a.status = 'pursuing';
+      pursuing[type] = a;
+      a.targetNode = a._pickPursuitTarget();
+      a.pauseUntil = 0;
+      a._hasVisual = false; // mark as acoustic-only origin
+      dispatched.push(a.cfg.label+' '+a.id);
+    }
+  });
+  if (dispatched.length) {
+    detectionCount++;
+    document.getElementById('i-det').textContent = detectionCount;
+    document.getElementById('i-stat').textContent = validated ? 'ACOUSTIC-TRI' : 'ACOUSTIC-LOW';
+    addAlert('bad', '<strong>Acoustic dispatch</strong> — '+dispatched.join(', ')+' converging on source.');
+  } else {
+    addAlert('info', 'All unit types already pursuing — no new dispatch needed.');
+  }
 }
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
@@ -1720,7 +1840,9 @@ function showBadGuyPanel(type) {
     +compassBtn('W',270)+'<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--bad);font-size:18px;">⦿</div>'
     +compassBtn('E',90)
     +compassBtn('SW',225)+compassBtn('S',180)+compassBtn('SE',135)
-    +'</div>';
+    +'</div>'
+    +'<button class="btn fw" onclick="fireGunshot()" style="margin-top:14px;width:100%;padding:9px;font-size:12px;">&#128266; Fire Weapon</button>'
+    +'<div style="font-size:10px;color:var(--mut);margin-top:4px;text-align:center;">Triggers acoustic event &middot; mic-mesh triangulates &middot; all units dispatch</div>';
 }
 
 function compassBtn(label, bearing) {
