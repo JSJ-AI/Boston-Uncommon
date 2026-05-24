@@ -1134,6 +1134,9 @@ function loadRoadNetwork() {
     document.getElementById('rdstat').style.color = '#22c55e';
     addAlert('info', 'Road network loaded: ' + nodeCount + ' nodes, ' +
       roadGraph.segments.length + ' segments. Auto-starting scenario...');
+    // If cameras were placed before road graph finished, re-render their FOVs
+    // so they switch from cardinal-fallback to per-road-approach bearings
+    updateCameraFOV();
     autoStart();
   }).catch(function(e) {
     document.getElementById('rdstat').textContent = 'Road network: load failed';
@@ -1452,18 +1455,54 @@ function setupCameraFOVLayer() {
 }
 
 function cameraFOVFeatures() {
-  // Each camera emits 4 wedge features (90° each at bearings 0/90/180/270).
+  // Traffic cams: render one 90° wedge per road approach (pulled from roadGraph
+  // neighbours), so coverage flows along streets the way a real fixed camera would.
+  // Surveillance cams (OSM man_made=surveillance): keep 4-wedge omni since we have
+  // no street-direction context for those.
   var feats = [];
   cameras.forEach(function(cam) {
     var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-    [0, 90, 180, 270].forEach(function(b) {
+    if (cam.subtype === 'surveillance') {
+      [0, 90, 180, 270].forEach(function(b) {
+        var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
+        feats.push({ type:'Feature',
+          geometry:{ type:'Polygon', coordinates:[pts] },
+          properties:{ color: cfg.color, opacity: 0.08 } });
+      });
+      return;
+    }
+    // Traffic cam — derive bearings from road neighbours
+    var bearings = trafficCamBearings(cam);
+    bearings.forEach(function(b) {
       var pts = wedgePoints(cam.lat, cam.lon, b, cfg.fovAngle, cfg.fovDist, 12);
       feats.push({ type:'Feature',
         geometry:{ type:'Polygon', coordinates:[pts] },
-        properties:{ color: cfg.color, opacity: 0.08 } });
+        properties:{ color: cfg.color, opacity: 0.10 } });
     });
   });
   return feats;
+}
+
+// For a traffic camera, return bearings (degrees) for each road approach
+// at its intersection. Fallback: 4 cardinal bearings if road graph not ready
+// or the camera node isn't in the graph (rare — OSM data quirk).
+function trafficCamBearings(cam) {
+  if (!roadNetworkReady) return [0, 90, 180, 270];
+  var node = roadGraph.nodes[cam.id];
+  if (!node || !node.neighbors || !node.neighbors.length) return [0, 90, 180, 270];
+  var seen = {};
+  var bearings = [];
+  node.neighbors.forEach(function(nbId) {
+    var nb = roadGraph.nodes[nbId];
+    if (!nb) return;
+    var b = bearingDeg(cam.lat, cam.lon, nb.lat, nb.lon);
+    // Deduplicate near-identical bearings (multi-way joins can repeat)
+    var key = Math.round(b / 10);
+    if (seen[key]) return;
+    seen[key] = true;
+    bearings.push(b);
+  });
+  return bearings.length ? bearings : [0, 90, 180, 270];
 }
 
 function updateCameraFOV() {
