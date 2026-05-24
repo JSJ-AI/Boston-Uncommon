@@ -242,8 +242,12 @@ body{display:flex;flex-direction:column;}
         <div class="abadge"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge"><span style="font-size:16px">&#128247;</span><div><div class="abn">Cameras</div><div class="abc" id="c-cam">0/0</div></div></div>
+        <div class="abadge"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
-      <button class="btn" id="btn-cam-toggle" onclick="toggleCameras()" style="margin-top:8px;font-size:11px;padding:6px 10px;">&#9673; Hide Cameras</button>
+      <div style="display:flex;gap:4px;margin-top:8px;">
+        <button class="btn" id="btn-cam-toggle" onclick="toggleCameras()" style="flex:1;font-size:10px;padding:6px 6px;">&#9673; Cams</button>
+        <button class="btn" id="btn-mic-toggle" onclick="toggleMicMesh()" style="flex:1;font-size:10px;padding:6px 6px;">&#9678; Mics</button>
+      </div>
     </div>
     <div style="flex:1;"></div>
     <div class="ps" style="font-size:10px;color:var(--mut);line-height:1.9;">
@@ -319,6 +323,7 @@ window.addEventListener('load', function() {
     // Set up FOV polygon layers
     setupFOVLayers();
     setupCameraFOVLayer();
+    setupMicMeshLayer();
 
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
@@ -537,6 +542,13 @@ var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
 var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#dc2626' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 var camerasVisible = true;  // toggle controlled by left-panel button
+
+// Acoustic microphone mesh — 4×5 = 20 mics in operational area
+// 700m listening radius chosen so 3+ mics hear any point (triangulation coverage)
+// Cell size ~780×660m, diagonal ~1020m → 700m reach covers own cell + neighbors
+var MIC_CONFIG  = { color:'#ec4899', radius:700, rows:4, cols:5 };
+var mics        = [];
+var micsVisible = true;     // toggle controlled by left-panel button (icons + mesh together)
 
 // ── ROAD GRAPH ────────────────────────────────────────────────────────────────
 var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
@@ -844,6 +856,17 @@ function makeCameraSVG(color) {
     '<rect x="5" y="8" width="9" height="6" rx="1" fill="'+color+'"/>' +
     '<polygon points="14,9 17,7 17,15 14,13" fill="'+color+'"/>' +
     '<circle cx="9" cy="11" r="1.4" fill="white"/>' +
+    '</svg>';
+}
+
+// Acoustic microphone icon — small pink mic silhouette
+function makeMicSVG(color) {
+  return '<svg width="14" height="14" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="7" cy="7" r="6.3" fill="white" stroke="'+color+'" stroke-width="1.3"/>' +
+    '<rect x="5.2" y="2.8" width="3.6" height="5.4" rx="1.8" fill="'+color+'"/>' +
+    '<path d="M3.5 6.5 Q3.5 9.5 7 9.5 Q10.5 9.5 10.5 6.5" fill="none" stroke="'+color+'" stroke-width="1.1" stroke-linecap="round"/>' +
+    '<line x1="7" y1="9.5" x2="7" y2="11.5" stroke="'+color+'" stroke-width="1.1" stroke-linecap="round"/>' +
+    '<line x1="5.5" y1="11.5" x2="8.5" y2="11.5" stroke="'+color+'" stroke-width="1.1" stroke-linecap="round"/>' +
     '</svg>';
 }
 
@@ -1238,6 +1261,12 @@ function autoStart() {
   setPill('scan', 'Scanning');
   doPlaceAgents();
   startMovement();
+  // Place mics after a delay so async Overpass camera fetches have time to land
+  // — collision avoidance needs to see camera positions to push mics away from them
+  setTimeout(function() {
+    placeMics();
+    document.getElementById('c-mic').textContent = mics.length + '/' + mics.length;
+  }, 3000);
 }
 
 
@@ -1451,6 +1480,90 @@ function toggleCameras() {
   updateCameraFOV();
   var btn = document.getElementById('btn-cam-toggle');
   if (btn) btn.textContent = (camerasVisible ? '\u25C9 Hide' : '\u25CE Show') + ' Cameras';
+}
+
+// ── ACOUSTIC MIC MESH (20 mics in grid, collision-avoided from existing icons) ─
+function setupMicMeshLayer() {
+  map.addSource('mic-mesh', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  // Below the camera FOV layer so it doesn't obscure cameras
+  map.addLayer({ id:'mic-mesh-fill', type:'fill', source:'mic-mesh',
+    paint:{ 'fill-color': MIC_CONFIG.color, 'fill-opacity': 0.08 } }, 'fov-cam-fill');
+}
+
+function micMeshFeatures() {
+  return mics.map(function(m) {
+    var pts = circlePoints(m.lat, m.lon, MIC_CONFIG.radius, 36);
+    return { type:'Feature', geometry:{ type:'Polygon', coordinates:[pts] }, properties:{} };
+  });
+}
+
+function updateMicMesh() {
+  var src = map.getSource('mic-mesh');
+  if (!src) return;
+  src.setData({ type:'FeatureCollection', features: micsVisible ? micMeshFeatures() : [] });
+}
+
+// Find nearest existing icon (camera or agent) and its distance, in meters
+function nearestIconDist(lat, lon) {
+  var minDist = Infinity, blocker = null;
+  cameras.forEach(function(c) {
+    var d = haversineM(lat, lon, c.lat, c.lon);
+    if (d < minDist) { minDist = d; blocker = c; }
+  });
+  agents.forEach(function(a) {
+    var d = haversineM(lat, lon, a.lat, a.lon);
+    if (d < minDist) { minDist = d; blocker = a; }
+  });
+  return { dist: minDist, blocker: blocker };
+}
+
+function placeMics() {
+  if (mics.length) return;  // idempotent — don't double-place
+  var rows = MIC_CONFIG.rows, cols = MIC_CONFIG.cols;
+  var parts  = BBOX.split(',').map(parseFloat);
+  var latMin = parts[0], lonMin = parts[1], latMax = parts[2], lonMax = parts[3];
+  var latStep = (latMax - latMin) / (rows + 1);
+  var lonStep = (lonMax - lonMin) / (cols + 1);
+  // Collision threshold ≈ 50m so mic icons don't sit on top of camera/agent icons
+  var COLLISION_M = 50;
+  for (var r = 1; r <= rows; r++) {
+    for (var c = 1; c <= cols; c++) {
+      // Grid center with small random jitter (±15% of cell)
+      var lat = latMin + r * latStep + (Math.random() - 0.5) * latStep * 0.3;
+      var lon = lonMin + c * lonStep + (Math.random() - 0.5) * lonStep * 0.3;
+      // Push away from nearest blocker, up to 6 attempts
+      for (var attempt = 0; attempt < 6; attempt++) {
+        var probe = nearestIconDist(lat, lon);
+        if (probe.dist > COLLISION_M) break;
+        // Shift in direction away from blocker, ~70m per step
+        var dy = lat - probe.blocker.lat;
+        var dx = lon - probe.blocker.lon;
+        var mag = Math.sqrt(dx*dx + dy*dy) || 0.00001;
+        lat += (dy / mag) * 0.0006;
+        lon += (dx / mag) * 0.0006;
+      }
+      // Create marker
+      var el = document.createElement('div');
+      el.style.cssText = 'cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));';
+      el.innerHTML = makeMicSVG(MIC_CONFIG.color);
+      el.title = 'Mic #' + (mics.length + 1);
+      var marker = new maplibregl.Marker({ element: el, anchor:'center' })
+        .setLngLat([lon, lat]).addTo(map);
+      if (!micsVisible) el.style.display = 'none';
+      mics.push({ id: mics.length + 1, lat: lat, lon: lon, marker: marker, el: el });
+    }
+  }
+  updateMicMesh();
+  addAlert('info', 'Acoustic mesh online: ' + mics.length + ' microphones, ' +
+    MIC_CONFIG.radius + 'm listening radius each.');
+}
+
+function toggleMicMesh() {
+  micsVisible = !micsVisible;
+  mics.forEach(function(m) { m.el.style.display = micsVisible ? '' : 'none'; });
+  updateMicMesh();
+  var btn = document.getElementById('btn-mic-toggle');
+  if (btn) btn.textContent = (micsVisible ? '\u25CC Hide' : '\u25CB Show') + ' Mic Mesh';
 }
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
