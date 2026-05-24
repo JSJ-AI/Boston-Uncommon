@@ -1656,7 +1656,9 @@ function placeCameras(nodes, subtype) {
     el.className = 'cam-marker';
     el.style.cursor = 'pointer';
     // Traffic cams = tiny dot (many of them, low clutter); surveillance = CCTV icon (rare, stand out)
-    el.innerHTML = subtype === 'surveillance' ? makeCameraSVG(cfg.color) : makeTrafficCamDotSVG(cfg.color);
+    // Both traffic and surveillance cams render as small 8x8 dots — color from
+    // cfg (amber for traffic, red for surveillance) distinguishes the two at a glance
+    el.innerHTML = makeTrafficCamDotSVG(cfg.color);
     el.title = label + ' #' + n.id;
     var marker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([n.lon, n.lat]).addTo(map);
