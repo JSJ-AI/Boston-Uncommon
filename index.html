@@ -164,6 +164,12 @@ body{display:flex;flex-direction:column;}
   0%,100%{opacity:.7;transform:scale(.9);}
   50%{opacity:1;transform:scale(1.05);}
 }
+/* Dark theme for the bad guy hover popup — readable against bright urban tiles */
+.bg-popup .maplibregl-popup-content{background:#0d1220;color:#e2e8f0;
+  border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:12px 14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.6);}
+.bg-popup .maplibregl-popup-tip{border-top-color:#0d1220 !important;
+  border-bottom-color:#0d1220 !important;}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -441,23 +447,17 @@ var incidentSeq = 0;        // monotonic id counter
 var taskingsRenderInt = null; // 1s interval to refresh tasking card timers
 var responseTimings = [];   // seconds, one per completed-arrival incident — for the running average
 
-// Welcome modal handlers — auto-shows once on first launch (tracked via localStorage)
+// Welcome modal handlers — auto-shows on every page load. Dismissed for the
+// current session via the Continue button, the close icon, or backdrop click.
 function showWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.add('show');}
-function hideWelcome(){
-  var m=document.getElementById('welcome-modal');
-  if(m)m.classList.remove('show');
-  try { localStorage.setItem('bu_welcomeSeen','1'); } catch(e) {}
-}
+function hideWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.remove('show');}
 
 // ── MAP INIT inside window.load — guarantees DOM + external CSS fully resolved ──
 window.addEventListener('load', function() {
 
-  // First-launch notice — auto-open the welcome modal once per browser
-  try {
-    if (!localStorage.getItem('bu_welcomeSeen')) {
-      showWelcome();
-    }
-  } catch(e) { /* localStorage may be disabled — modal stays available via About button */ }
+  // Auto-open the welcome modal on every page load — dismissed by clicking
+  // Continue to Simulation, the X, or anywhere outside the modal.
+  showWelcome();
 
   map = new maplibregl.Map({
     container: 'map',
@@ -486,16 +486,8 @@ window.addEventListener('load', function() {
     // reflect the off state and any prematurely-created markers are hidden
     applyAssetVisibility();
 
-    // Static Boston Common label — anchored in the SW quadrant of the park,
-    // away from the OpenFreeMap style's own park label that appears at higher zooms
-    var bcLabel = document.createElement('div');
-    bcLabel.style.cssText = 'background:rgba(22,163,74,.85);color:#ffffff;padding:4px 10px;border-radius:4px;'
-      + 'font:600 11px sans-serif;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;'
-      + 'white-space:nowrap;border:1px solid rgba(255,255,255,.3);text-shadow:0 1px 2px rgba(0,0,0,.6);';
-    bcLabel.textContent = 'Boston Common';
-    new maplibregl.Marker({ element: bcLabel })
-      .setLngLat([-71.0668, 42.3545])
-      .addTo(map);
+    // (Boston Common label removed per user preference — the map style's own park
+    // label appears as you zoom in and is enough.)
 
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
@@ -1094,12 +1086,14 @@ var ALLOWED_HIGHWAYS = {
 
 function buildGraph(data) {
   var nodes = {};
+  roadGraph.wayNames = {}; // wayId -> street name from OSM 'name' tag
   data.elements.forEach(function(el) {
     if (el.type === 'node') nodes[el.id] = { lat: el.lat, lon: el.lon, neighbors: [] };
   });
   data.elements.forEach(function(el) {
     if (el.type !== 'way') return;
     var hw = (el.tags && el.tags.highway) || 'unclassified';
+    if (el.tags && el.tags.name) roadGraph.wayNames[el.id] = el.tags.name;
     for (var i = 0; i < el.nodes.length - 1; i++) {
       var a = el.nodes[i], b = el.nodes[i+1];
       if (!nodes[a] || !nodes[b]) continue;
@@ -1186,6 +1180,21 @@ function nearestNode(lat, lon) {
     if (d < bestD) { bestD = d; best = id; }
   });
   return best;
+}
+
+// Return the name of any street touching this road-graph node (or null if unnamed)
+function streetNameAtNode(nodeId) {
+  if (!nodeId) return null;
+  var n = roadGraph.nodes[nodeId];
+  if (!n || !n.neighborHW || !roadGraph.wayNames) return null;
+  var keys = Object.keys(n.neighborHW);
+  for (var i = 0; i < keys.length; i++) {
+    var info = n.neighborHW[keys[i]];
+    if (info && info.wayId && roadGraph.wayNames[info.wayId]) {
+      return roadGraph.wayNames[info.wayId];
+    }
+  }
+  return null;
 }
 
 function haversineM(lat1, lon1, lat2, lon2) {
@@ -1946,11 +1955,11 @@ BadGuy.prototype.addToMap = function() {
   this.marker = new maplibregl.Marker({
     element: el, rotationAlignment:'map', pitchAlignment:'map'
   }).setLngLat([this.lon, this.lat]).addTo(map);
-  // Hover popup with incident info
+  // Hover popup with incident info (dark theme via bg-popup className)
   var self = this;
   el.addEventListener('mouseenter', function() {
     if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
-    sensorPopup = new maplibregl.Popup({closeButton:false, closeOnClick:false, offset:14, maxWidth:'240px'})
+    sensorPopup = new maplibregl.Popup({className:'bg-popup', closeButton:false, closeOnClick:false, offset:14, maxWidth:'260px'})
       .setLngLat([self.lon, self.lat])
       .setHTML(badGuyPopupHTML(self))
       .addTo(map);
@@ -2012,10 +2021,18 @@ BadGuy.prototype._pickTarget = function() {
   // Match agent type to bad guy type so bikes don't use footways/pedestrian-only paths
   var agentType = (this.type === 'car') ? 'car' : (this.type === 'bike' ? 'bike' : 'officer');
   var hwFilter = ALLOWED_HIGHWAYS[agentType];
+  // Phase 4: keep suspect inside the operational area by rejecting edge-adjacent targets
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var edgeMargin = 0.0015; // ~165m soft buffer — bad guy turns around well before the edge
+  function nodeInBounds(nb) {
+    return nb.lat > BBOX_S + edgeMargin && nb.lat < BBOX_N - edgeMargin
+        && nb.lon > BBOX_W + edgeMargin && nb.lon < BBOX_E - edgeMargin;
+  }
   var valid = n.neighbors.filter(function(nid) {
     if (nid == self.prevNode) return false;
     var nb = roadGraph.nodes[nid];
     if (!nb) return false;
+    if (!nodeInBounds(nb)) return false;
     if (hwFilter && n.neighborHW && n.neighborHW[nid]) {
       var info = n.neighborHW[nid];
       var hw = info && info.hw ? info.hw : info;
@@ -2023,7 +2040,20 @@ BadGuy.prototype._pickTarget = function() {
     }
     return true;
   });
-  // Dead end: allow backtracking
+  // Dead end (or only edge-adjacent neighbors left): relax the in-bounds filter
+  if (!valid.length) {
+    valid = n.neighbors.filter(function(nid) {
+      if (nid == self.prevNode) return false;
+      var nb = roadGraph.nodes[nid];
+      if (!nb) return false;
+      if (hwFilter && n.neighborHW && n.neighborHW[nid]) {
+        var info = n.neighborHW[nid];
+        var hw = info && info.hw ? info.hw : info;
+        if (!hwFilter.test(hw)) return false;
+      }
+      return true;
+    });
+  }
   if (!valid.length) valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
   if (!valid.length) return this.currentNode;
   if (valid.length === 1) return valid[0];
@@ -2081,12 +2111,14 @@ BadGuy.prototype.move = function() {
       remain = 0;
     }
   }
-  // Bounds check
-  if (this.lon < -71.180 || this.lon > -70.952 || this.lat < 42.278 || this.lat > 42.432) {
-    addAlert('warn', 'Incident #' + (this.id || '?') + ' left operational area.');
-    closeIncident(this);
-    return;
-  }
+  // Phase 4: defensive bounds clamp — keeps suspect inside the operational area
+  // even if road graph traversal somehow walked past the edge filter
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var clampMargin = 0.0005;
+  if (this.lat < BBOX_S + clampMargin) this.lat = BBOX_S + clampMargin;
+  if (this.lat > BBOX_N - clampMargin) this.lat = BBOX_N - clampMargin;
+  if (this.lon < BBOX_W + clampMargin) this.lon = BBOX_W + clampMargin;
+  if (this.lon > BBOX_E - clampMargin) this.lon = BBOX_E - clampMargin;
   this.updateMarker();
 };
 
@@ -3019,15 +3051,25 @@ function answer911Call() {
     return;
   }
   var incident = _ic_pickIncident();
+  // Phase 4.1: pick the spawn point FIRST, then look up its actual street name
+  // from the road graph so the call's address references the real spawn location.
+  var pt = _ic_randomMapPoint();
+  var realStreet = null;
+  if (roadNetworkReady) {
+    var snapped = snapToRoad(pt.lat, pt.lng, incident.objType);
+    pt.lat = snapped.lat; pt.lng = snapped.lon;
+    var nid = nearestNode(pt.lat, pt.lng);
+    realStreet = streetNameAtNode(nid);
+  }
+  var addressNum = 100 + Math.floor(Math.random() * 800);
   var tokens = {
     color:     _ic_colorFor(incident.objType),
     direction: _ic_pick(DIRECTIONS),
-    address:   _ic_randomAddress(),
-    street:    _ic_pick(BOSTON_STREETS),
+    address:   realStreet ? (addressNum + ' ' + realStreet) : _ic_randomAddress(),
+    street:    realStreet || _ic_pick(BOSTON_STREETS),
     landmark:  _ic_pick(BOSTON_LANDMARKS)
   };
   var callText = _ic_fill(incident.template, tokens);
-  var pt = _ic_randomMapPoint();
 
   // Phase 2: multi-incident — no longer clear existing before placing
 
