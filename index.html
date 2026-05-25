@@ -60,7 +60,7 @@ body{display:flex;flex-direction:column;}
 .ph-dot{width:6px;height:6px;border-radius:50%;background:var(--acc);}
 .ps{padding:12px 14px;border-bottom:1px solid var(--brd);}
 .psl{display:block;font-size:10px;font-weight:600;letter-spacing:.07em;
-  text-transform:uppercase;color:var(--mut);margin-bottom:8px;}
+  text-transform:uppercase;color:#7dd3fc;margin-bottom:8px;}
 
 /* buttons */
 .btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
@@ -312,7 +312,7 @@ body{display:flex;flex-direction:column;}
     <div class="ps">
       <span class="psl">Operations</span>
       <button class="btn bp" id="btn-start" disabled style="display:none">&#9889; Start Scenario</button>
-      <button class="btn" id="btn-reset" disabled>&#8635; Reset</button>
+      <button class="btn" id="btn-reset" disabled>&#8635; Reset &amp; Reposition All Police Assets</button>
     </div>
     <div class="ps">
       <span class="psl">911 Dispatch</span>
@@ -324,7 +324,7 @@ body{display:flex;flex-direction:column;}
       </div>
     </div>
     <div class="ps">
-      <span class="psl">Assets Deployed</span>
+      <span class="psl">Deployed / Assets Available</span>
       <div class="agrid-hint">Click any badge to toggle that layer</div>
       <div class="agrid">
         <div class="abadge" data-toggle="drones" onclick="toggleAssetType('drones')"><span style="font-size:16px">&#128641;</span><div><div class="abn">Drones</div><div class="abc" id="c-dr">0/3</div></div></div>
@@ -337,7 +337,7 @@ body{display:flex;flex-direction:column;}
       </div>
     </div>
     <div style="flex:1;"></div>
-    <div class="ps" style="font-size:10px;color:var(--mut);line-height:1.9;">
+    <div class="ps" style="font-size:10px;color:var(--dim);line-height:1.9;">
       <div>&#128205; Boston Common &middot; 5mi grid</div>
       <div>&#128506; OpenStreetMap / OpenFreeMap</div>
       <div id="rdstat" style="color:var(--brd);">Road network: loading...</div>
@@ -677,7 +677,9 @@ function returnFromTasking(agent) {
   agent.pauseUntil = 0;
 }
 
-// Recompute "Available/Total" badges. When 3 cars are tasked, c-ca shows "7/10".
+// Recompute badges. New format: "Deployed / Available".
+// Police: deployed = total in field, available = total minus tasked.
+// Sensors: when toggled on, deployed = inventory and available = same; when off, 0/0.
 function updateAssetCounts() {
   var totals = { drone:0, car:0, bike:0, officer:0 };
   var tasked = { drone:0, car:0, bike:0, officer:0 };
@@ -686,14 +688,31 @@ function updateAssetCounts() {
     totals[a.type]++;
     if (a.taskedTo) tasked[a.type]++;
   });
-  function setBadge(id, type) {
+  function setPoliceBadge(id, type) {
     var el = document.getElementById(id);
-    if (el) el.textContent = (totals[type] - tasked[type]) + '/' + totals[type];
+    if (el) el.textContent = totals[type] + '/' + (totals[type] - tasked[type]);
   }
-  setBadge('c-dr','drone');
-  setBadge('c-ca','car');
-  setBadge('c-bi','bike');
-  setBadge('c-of','officer');
+  setPoliceBadge('c-dr','drone');
+  setPoliceBadge('c-ca','car');
+  setPoliceBadge('c-bi','bike');
+  setPoliceBadge('c-of','officer');
+  // Sensors: show 0/0 when toggled off so the badge reflects "nothing deployed"
+  function setSensorBadge(id, inventory, visKey) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (assetVisibility[visKey]) {
+      el.textContent = inventory + '/' + inventory;
+    } else {
+      el.textContent = '0/0';
+    }
+  }
+  var trafCount = 0, survCount = 0;
+  cameras.forEach(function(c) {
+    if (c.subtype === 'surveillance') survCount++; else trafCount++;
+  });
+  setSensorBadge('c-cam-traf', trafCount, 'traffic-cams');
+  setSensorBadge('c-cam-surv', survCount, 'surveillance-cams');
+  setSensorBadge('c-mic', mics.length, 'mics');
 }
 
 // Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
@@ -1504,7 +1523,7 @@ function loadRoadNetwork() {
     var nodes = (data.elements || []).filter(function(el) { return el.type === 'node'; })
       .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
     placeCameras(nodes, 'traffic');
-    addAlert('info', 'Traffic cameras online: ' + nodes.length + ' signalised intersections.');
+    // Sensor defaults to OFF; alert fires only when the user toggles it on.
   }).catch(function(e) {
     addAlert('warn', 'Traffic signals fetch failed — no cameras placed.');
     console.warn('Traffic signals fetch failed:', e);
@@ -1516,7 +1535,7 @@ function loadRoadNetwork() {
       .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
     if (nodes.length) {
       placeCameras(nodes, 'surveillance');
-      addAlert('info', 'Public surveillance cameras online: ' + nodes.length + ' nodes (OSM).');
+      // Sensor defaults to OFF; alert fires only when the user toggles it on.
     }
   }).catch(function(e) {
     console.warn('Surveillance fetch failed:', e);
@@ -1707,7 +1726,7 @@ function autoStart() {
   // — collision avoidance needs to see camera positions to push mics away from them
   setTimeout(function() {
     placeMics();
-    document.getElementById('c-mic').textContent = mics.length + '/' + mics.length;
+    updateAssetCounts();
   }, 3000);
 }
 
@@ -2050,14 +2069,10 @@ function placeCameras(nodes, subtype) {
   updateCameraCounts();
 }
 
-// Refresh the split traffic/surveillance count badges
+// Refresh the split traffic/surveillance count badges via the unified updater
+// (which respects toggle state — shows 0/0 when the sensor type is off).
 function updateCameraCounts() {
-  var t = 0, s = 0;
-  cameras.forEach(function(c) { if (c.subtype === 'surveillance') s++; else t++; });
-  var et = document.getElementById('c-cam-traf');
-  var es = document.getElementById('c-cam-surv');
-  if (et) et.textContent = t + '/' + t;
-  if (es) es.textContent = s + '/' + s;
+  updateAssetCounts();
 }
 
 // ── ACOUSTIC MIC MESH (20 mics in grid, collision-avoided from existing icons) ─
@@ -2139,8 +2154,7 @@ function placeMics() {
     }
   }
   updateMicMesh();
-  addAlert('info', 'Acoustic mesh online: ' + mics.length + ' microphones, ' +
-    MIC_CONFIG.radius + 'm listening radius each.');
+  // Mics default to OFF; alert fires only when the user toggles them on.
 }
 
 // ── UNIFIED ASSET LAYER TOGGLES ──────────────────────────────────────────────
@@ -2149,8 +2163,32 @@ function placeMics() {
 // assetVisibility. Click → toggleAssetType → applyAssetVisibility re-syncs icons,
 // FOV layers, and badge visual state in one place.
 function toggleAssetType(type) {
-  assetVisibility[type] = !assetVisibility[type];
+  var wasOn = !!assetVisibility[type];
+  assetVisibility[type] = !wasOn;
   applyAssetVisibility();
+  // Sensor toggle messages — only for sensor types, not police layer toggles.
+  var sensorLabels = {
+    'traffic-cams':       'Traffic cameras',
+    'surveillance-cams':  'Surveillance cameras',
+    'mics':               'Acoustic mesh'
+  };
+  if (sensorLabels[type]) {
+    var count;
+    if (type === 'mics') count = mics.length;
+    else if (type === 'surveillance-cams') count = cameras.filter(function(c){return c.subtype==='surveillance';}).length;
+    else count = cameras.filter(function(c){return c.subtype!=='surveillance';}).length;
+    if (!wasOn) {
+      // Just turned ON
+      if (count > 0) {
+        addAlert('info', sensorLabels[type] + ' online — ' + count + ' deployed.');
+      } else {
+        addAlert('warn', sensorLabels[type] + ' enabled — no data loaded yet.');
+      }
+    } else {
+      // Just turned OFF
+      if (count > 0) addAlert('info', sensorLabels[type] + ' offline.');
+    }
+  }
 }
 
 function applyAssetVisibility() {
@@ -2175,10 +2213,11 @@ function applyAssetVisibility() {
   updateFOV();
   updateCameraFOV();
   updateMicMesh();
-  // Badge UI state
+  // Badge UI state + count refresh (sensor badges flip to/from 0/0)
   document.querySelectorAll('.abadge[data-toggle]').forEach(function(b) {
     b.classList.toggle('off', !assetVisibility[b.dataset.toggle]);
   });
+  updateAssetCounts();
 }
 
 // ── GUNSHOT EVENT + TRIANGULATION + ACOUSTIC DISPATCH ────────────────────────
