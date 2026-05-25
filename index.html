@@ -857,10 +857,11 @@ function updateAssetCounts() {
 }
 
 // Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
-// Arrival thresholds are deliberately generous because police cars and bikes
-// often can't drive ONTO the road the suspect is on (suspect on a footway in
-// Boston Common, car stuck at the nearest curb 40-80m away). For a demo, the
-// nearest-road position counts as "on scene".
+// Two radii per unit type:
+//   NEAR  → bad guy freezes (slightly wider — gives unit approach buffer)
+//   CLOSE → 30s clearing countdown starts
+// This avoids the "officer at 30m oscillates while bg drifts" bug — bg freezes
+// first, then officer closes the last few meters without anything moving.
 function checkIncidentArrival(bg) {
   if (!bg || !bg.active) return;
   if (bg.incidentStatus === 'clearing') return;
@@ -872,11 +873,15 @@ function checkIncidentArrival(bg) {
       dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
     }
   });
-  // First arrival (timer freeze) = any non-drone within 30m
+  // NEAR radii (freeze the suspect — approach buffer)
+  var carNear     = dists.car     && dists.car.d     < 80;
+  var bikeNear    = dists.bike    && dists.bike.d    < 60;
+  var officerNear = dists.officer && dists.officer.d < 40;
+  // First arrival: any unit reaches NEAR → freeze bg, freeze response timer.
   var firstArrival = null;
-  ['car','bike','officer'].forEach(function(t) {
-    if (dists[t] && dists[t].d < 30 && !firstArrival) firstArrival = dists[t].agent;
-  });
+  if      (carNear)     firstArrival = dists.car.agent;
+  else if (bikeNear)    firstArrival = dists.bike.agent;
+  else if (officerNear) firstArrival = dists.officer.agent;
   if (firstArrival && !bg.timerEnd) {
     bg.timerEnd = Date.now();
     bg.maxSpeed = 0;
@@ -888,18 +893,12 @@ function checkIncidentArrival(bg) {
     addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
       firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
   }
-  // Clear trigger: each unit type has a generous "close enough" radius matched
-  // to what its road graph can actually reach:
-  //   - car: 60m (curb-parked when suspect is in a park/lot interior)
-  //   - bike: 45m (similar — bikes can't use footways/pedestrian paths)
-  //   - officer: 25m (on foot — usually right next to suspect)
+  // CLOSE radii (clearing countdown — actual "on scene")
   var carClose     = dists.car     && dists.car.d     < 60;
   var bikeClose    = dists.bike    && dists.bike.d    < 45;
   var officerClose = dists.officer && dists.officer.d < 25;
-  // Adaptive fallback: if any tasked unit has been within 80m of bg for 10s
-  // without triggering clear, treat as arrived. This catches the case where
-  // the suspect's road graph is disjoint from the unit's, leaving the unit
-  // physically stuck just outside the normal threshold.
+  // Adaptive fallback: any tasked unit within 80m for 10s without triggering
+  // clear — catches edge cases (suspect on a disconnected road graph).
   if (!bg._near80SinceTs) bg._near80SinceTs = {};
   var stuckClose = false, stuckAgent = null;
   ['car','bike','officer'].forEach(function(t) {
@@ -1864,14 +1863,18 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
-  // Pursuit hold: stop moving once the agent is at the scene. Without this,
-  // A* keeps recomputing the path as the search position drifts a few metres
-  // and the agent oscillates back and forth between adjacent road nodes.
+  // Pursuit hold: stop moving once on scene. Hold radius matches each unit's
+  // CLOSE-clear radius (car 60m, bike 45m, officer 25m) so as soon as the
+  // unit triggers "contained by", it just sits there. Prevents path-recompute
+  // oscillation around the goal node.
   if (agent.status === 'pursuing' && agent.taskedTo) {
     var holdTgt = targetFor(agent);
     if (holdTgt && holdTgt.active) {
       var holdSp = searchPos(holdTgt);
-      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < 30) {
+      var holdR = agent.type === 'car'  ? 60
+                : agent.type === 'bike' ? 45
+                : 25; // officer
+      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < holdR) {
         agent.updateMarker && agent.updateMarker();
         return;
       }
@@ -3122,13 +3125,13 @@ var INCIDENT_TYPES = [
     template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
   { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
     template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
-  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
+  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2, apparel:'shirt',
     template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
-  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still',
+  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still', apparel:'clothing',
     template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
-  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
+  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still', apparel:'shirt',
     template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
-  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
+  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still', apparel:'jacket',
     template:"I just heard three or four gunshots from somewhere near {landmark}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
 ];
 
@@ -3281,7 +3284,10 @@ function answer911Call() {
       id:       incident.id,
       label:    incident.label,
       color:    tokens.color,
-      apparel:  (incident.objType === 'person') ? _ic_pickApparel() : null,
+      // Apparel must match the 911 call template's specific noun so the
+      // dispatch alert and drone "visual on" alert all say the same word
+      // (shirt vs jacket vs clothing).
+      apparel:  (incident.objType === 'person') ? (incident.apparel || 'clothing') : null,
       subkind:  incident.subkind || null,
       motion:   incident.motion  || 'moving',
       callText: callText
@@ -3301,20 +3307,23 @@ function answer911Call() {
   _ic_display(incident, callText, tokens);
   _ic_speak(callText);
   // Phase 4.2: dispatch alert mirrors the 911 call's metadata exactly so the
-  // operator sees: incident category, color + object, location string actually
-  // used in the call. (renderTaskings card and detector "visual" alerts already
-  // reference incidentMeta.color, so all three are now consistent.)
+  // operator sees: incident category, suspect descriptor (color + object/apparel),
+  // location string actually used in the call, and direction if applicable.
+  // renderTaskings card and detector "visual" alerts also reference
+  // incidentMeta.color + apparel — all three feeds are now consistent.
   if (typeof badGuy !== 'undefined' && badGuy) {
-    var objNoun = incident.objType === 'car'   ? 'car'
-                : incident.objType === 'bike'  ? 'bicycle'
-                : 'person';
+    var descriptor;
+    if (incident.objType === 'car')      descriptor = tokens.color + ' car';
+    else if (incident.objType === 'bike') descriptor = tokens.color + ' bicycle';
+    else descriptor = 'person in ' + tokens.color + ' ' + (incident.apparel || 'clothing');
     var locStr = (incident.template.indexOf('{address}')  >= 0) ? tokens.address
                : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
                : (incident.template.indexOf('{landmark}') >= 0) ? tokens.landmark
                : null;
+    var dirStr = (incident.template.indexOf('{direction}') >= 0) ? (' heading ' + tokens.direction) : '';
     addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id + ' &mdash; ' + incident.label +
-      '</strong>: ' + tokens.color + ' ' + objNoun +
-      (locStr ? ' near ' + locStr : '') + '.');
+      '</strong> &mdash; ' + descriptor +
+      (locStr ? ' near ' + locStr : '') + dirStr + '.');
   }
   // Re-render taskings now that metadata is set (so card shows description)
   renderTaskings();
