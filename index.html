@@ -93,9 +93,32 @@ body{display:flex;flex-direction:column;}
   margin:-4px 0 6px;text-align:center;opacity:.8;}
 
 /* alerts */
-#alert-feed{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;}
+#alert-feed{flex:1 1 0;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;}
 #alert-feed::-webkit-scrollbar{width:4px;}
 #alert-feed::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
+#taskings-panel{flex:1 1 0;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;}
+#taskings-panel::-webkit-scrollbar{width:4px;}
+#taskings-panel::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
+#taskings-panel .none{padding:14px;text-align:center;color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase;}
+.tp-card{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;padding:8px 10px;border-left:3px solid var(--bad);font-size:11px;}
+.tp-card.arrived{border-left-color:var(--warn);}
+.tp-card.clearing{border-left-color:var(--ok);}
+.tp-card .tp-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.tp-card .tp-label{font-weight:600;color:var(--bad);font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+.tp-card .tp-timer{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--warn);}
+.tp-card .tp-timer.locked{color:var(--ok);}
+.tp-card .tp-desc{color:var(--dim);font-size:11px;margin-bottom:5px;line-height:1.3;}
+.tp-card .tp-units{display:flex;gap:4px;flex-wrap:wrap;font-size:9px;margin-bottom:3px;}
+.tp-card .tp-unit{background:rgba(0,0,0,.3);border:1px solid var(--brd);padding:1px 6px;border-radius:8px;color:var(--dim);font-weight:600;letter-spacing:.04em;}
+.tp-card .tp-unit.car{color:#16a34a;border-color:rgba(22,163,74,.4);}
+.tp-card .tp-unit.bike{color:#ea580c;border-color:rgba(234,88,12,.4);}
+.tp-card .tp-unit.officer{color:#7c3aed;border-color:rgba(124,58,237,.4);}
+.tp-card .tp-status{font-size:9px;color:var(--mut);margin-top:4px;text-transform:uppercase;letter-spacing:.3px;}
+.tp-card .tp-status.arrived{color:var(--warn);}
+.tp-card .tp-status.clearing{color:var(--ok);}
+.agent-tasked-ring{position:absolute;top:50%;left:50%;width:30px;height:30px;margin-left:-15px;margin-top:-15px;border:2px solid var(--warn);border-radius:50%;
+  animation:tasked-pulse 1.4s ease-out infinite;pointer-events:none;}
+@keyframes tasked-pulse{0%{transform:scale(.6);opacity:1;}100%{transform:scale(1.8);opacity:0;}}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -327,33 +350,15 @@ body{display:flex;flex-direction:column;}
 
   <div id="right-panel">
     <div class="ph"><div class="ph-dot" style="background:var(--bad)"></div>Alert Feed</div>
-    <div id="sensor-feed">
-      <div class="sf-hd">
-        <span>Nearest Sensor</span>
-        <span class="sf-on" id="sf-on" style="display:none;">LIVE</span>
-      </div>
-      <div class="sf-body" id="sf-body">
-        <div class="none" id="sf-empty">Deploy a target to view nearest sensor</div>
-      </div>
-      <div class="sf-foot">
-        <span class="id" id="sf-id">--</span>
-        <span class="dist none" id="sf-dist">--</span>
-      </div>
-    </div>
     <div id="alert-feed">
       <div class="ai info">
         <div class="ait">00:00:00</div>
         <div class="aim"><strong>System online.</strong> Awaiting scenario.</div>
       </div>
     </div>
-    <div id="bg-panel" class="ps" style="display:none;">
-      <div id="bg-attrs"></div>
-    </div>
-    <div id="istatus">
-      <div class="ir"><div class="irk">Incident</div><div class="irv none" id="i-type">None</div></div>
-      <div class="ir"><div class="irk">Location</div><div class="irv none" id="i-loc">--</div></div>
-      <div class="ir"><div class="irk">Status</div><div class="irv none" id="i-stat">Standby</div></div>
-      <div class="ir"><div class="irk">Detections</div><div class="irv" id="i-det">0</div></div>
+    <div class="ph" style="border-top:1px solid var(--brd);"><div class="ph-dot" style="background:var(--warn)"></div>Active Incidents<span id="active-count" style="margin-left:auto;color:var(--mut);font-weight:400;font-size:10px;">0</span></div>
+    <div id="taskings-panel">
+      <div class="none" id="tp-empty">No active incidents</div>
     </div>
   </div>
 
@@ -362,6 +367,11 @@ body{display:flex;flex-direction:column;}
 <script>
 var CENTER = [-71.0659, 42.3551];
 var map, timerSec=0, timerInt=null, scenarioOn=false, deployMode=false, pendingType=null;
+
+// Phase 2: multi-incident state
+var badGuys = [];           // array of active incidents (BadGuy instances with incident metadata)
+var incidentSeq = 0;        // monotonic id counter
+var taskingsRenderInt = null; // 1s interval to refresh tasking card timers
 
 // ── MAP INIT inside window.load — guarantees DOM + external CSS fully resolved ──
 window.addEventListener('load', function() {
@@ -570,33 +580,261 @@ function exitDeploy(){
 }
 function placeBadGuy(lat,lng,type){
   exitDeploy();
-  if (badGuy) clearIncident();
-  // Snap to nearest valid road node for this bad guy type
+  // Phase 2: multi-incident — no longer clearIncident first
   var snapped = roadNetworkReady ? snapToRoad(lat, lng, type) : { lat: lat, lon: lng };
   lat = snapped.lat; lng = snapped.lon;
-  badGuy = new BadGuy(type, lat, lng);
-  badGuy.maxSpeed = MODE_MAX_SPEED[type] || 30;
-  badGuy.addToMap();
-  var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
-  detectionCount=0;
-  document.getElementById('i-det').textContent='0';
-  document.getElementById('i-type').textContent=labels[type];
-  document.getElementById('i-type').classList.remove('none');
-  document.getElementById('i-loc').textContent=lat.toFixed(4)+', '+lng.toFixed(4);
-  document.getElementById('i-loc').classList.remove('none');
-  document.getElementById('i-stat').textContent='Active';
-  document.getElementById('i-stat').classList.remove('none');
-  incidentOn=true;
+  var bg = new BadGuy(type, lat, lng);
+  bg.id = ++incidentSeq;
+  bg.taskedUnits = {};      // { car:agent, bike:agent, officer:agent, drone:agent }
+  bg.timerStart = Date.now();
+  bg.timerEnd = null;       // set when first non-drone tasked unit arrives
+  bg.arrivedAt = null;      // set when car arrives (starts 30s clear)
+  bg.clearAt = null;        // set when arrivedAt + 30s
+  bg.incidentStatus = 'active';
+  bg.maxSpeed = MODE_MAX_SPEED[type] || 30;
+  // Stationary incidents stay put
+  if (bg.incidentMeta && bg.incidentMeta.motion === 'still') bg.maxSpeed = 0;
+  bg.addToMap();
+  badGuys.push(bg);
+  badGuy = bg;              // focused incident (most recent)
+  incidentOn = true;
   startTimer(); setPill('active','Active Incident');
-  addAlert('bad','<strong>911 INCIDENT DEPLOYED</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
-  showBadGuyPanel(type);
-  startSensorFeed();
+  // Dispatch closest available car/bike/officer to this incident
+  dispatchToIncident(bg);
+  var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
+  addAlert('bad','<strong>911 INCIDENT #'+bg.id+'</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
+  renderTaskings();
+  // Start 1-second timer refresh for tasking cards (only once)
+  if (!taskingsRenderInt) taskingsRenderInt = setInterval(renderTaskings, 1000);
+}
+
+
+// ── Phase 2: Multi-incident dispatch & lifecycle ────────────────────────────
+// Returns the active incident this agent is tasked to (or null)
+function targetFor(agent) {
+  if (!agent || !agent.taskedTo) return null;
+  for (var i = 0; i < badGuys.length; i++) {
+    if (badGuys[i].id === agent.taskedTo) return badGuys[i];
+  }
+  return null;
+}
+
+// Dispatch closest available car / bike / officer to this incident.
+// Drone is also assigned if available (passive ISR overhead).
+function dispatchToIncident(bg) {
+  ['car','bike','officer','drone'].forEach(function(type) {
+    // Find closest non-tasked, non-captured agent of this type
+    var pool = agents.filter(function(a) {
+      return a.type === type && a.status !== 'captured' && !a.taskedTo;
+    });
+    if (!pool.length) return;
+    var best = pool[0], bestD = Infinity;
+    pool.forEach(function(a) {
+      var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+      if (d < bestD) { bestD = d; best = a; }
+    });
+    best.taskedTo = bg.id;
+    best.status = 'pursuing';
+    best.targetNode = best._pickPursuitTarget();
+    best.pauseUntil = 0;
+    // Visual: pulsing ring overlay on the marker
+    if (best.marker && best.marker._element && !best.marker._element.querySelector('.agent-tasked-ring')) {
+      var ring = document.createElement('div');
+      ring.className = 'agent-tasked-ring';
+      best.marker._element.style.position = 'relative';
+      best.marker._element.appendChild(ring);
+    }
+    bg.taskedUnits[type] = best;
+  });
+  bg.incidentStatus = 'tasked';
+  updateAssetCounts();
+  // Add an alert noting who was dispatched
+  var who = [];
+  ['car','bike','officer','drone'].forEach(function(t) {
+    if (bg.taskedUnits[t]) who.push(bg.taskedUnits[t].cfg.label + ' ' + bg.taskedUnits[t].id);
+  });
+  if (who.length) {
+    addAlert('warn', 'Dispatch on incident #' + bg.id + ': ' + who.join(', ') + '.');
+  }
+}
+
+// Return a tasked agent to patrol when its incident closes
+function returnFromTasking(agent) {
+  if (!agent) return;
+  agent.taskedTo = null;
+  agent.status = 'patrol';
+  agent._hasVisual = false;
+  if (agent.marker && agent.marker._element) {
+    var ring = agent.marker._element.querySelector('.agent-tasked-ring');
+    if (ring) ring.remove();
+  }
+  agent.targetNode = agent._pickTarget();
+  agent.pauseUntil = 0;
+}
+
+// Recompute "Available/Total" badges. When 3 cars are tasked, c-ca shows "7/10".
+function updateAssetCounts() {
+  var totals = { drone:0, car:0, bike:0, officer:0 };
+  var tasked = { drone:0, car:0, bike:0, officer:0 };
+  agents.forEach(function(a) {
+    if (totals[a.type] === undefined) return;
+    totals[a.type]++;
+    if (a.taskedTo) tasked[a.type]++;
+  });
+  function setBadge(id, type) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = (totals[type] - tasked[type]) + '/' + totals[type];
+  }
+  setBadge('c-dr','drone');
+  setBadge('c-ca','car');
+  setBadge('c-bi','bike');
+  setBadge('c-of','officer');
+}
+
+// Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
+function checkIncidentArrival(bg) {
+  if (!bg || !bg.active) return;
+  if (bg.incidentStatus === 'clearing') return;
+  // Find tasked units within capture range (8m)
+  var onScene = [];
+  Object.keys(bg.taskedUnits).forEach(function(type) {
+    var a = bg.taskedUnits[type];
+    if (a && a.status === 'pursuing') {
+      var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+      if (d < 8) onScene.push(a);
+    }
+  });
+  // First non-drone arrival: stop motion, record response time
+  var nonDrone = onScene.filter(function(a) { return a.type !== 'drone'; });
+  if (nonDrone.length && !bg.timerEnd) {
+    bg.timerEnd = Date.now();
+    bg.maxSpeed = 0;
+    bg.speed = 0;
+    bg.incidentStatus = 'arrived';
+    var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
+    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> — ' +
+      nonDrone[0].cfg.label + ' ' + nonDrone[0].id + ' on scene. Response: ' + respSec + 's.');
+  }
+  // Car arrival: kick off 30s clearance
+  var carOnScene = onScene.filter(function(a) { return a.type === 'car'; });
+  if (carOnScene.length && !bg.arrivedAt) {
+    bg.arrivedAt = Date.now();
+    bg.clearAt = bg.arrivedAt + 30000;
+    bg.incidentStatus = 'clearing';
+    addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
+      carOnScene[0].cfg.label + ' ' + carOnScene[0].id + '. Clearing in 30s...');
+  }
+}
+
+function checkIncidentClear(bg) {
+  if (!bg || !bg.clearAt) return;
+  if (Date.now() < bg.clearAt) return;
+  closeIncident(bg);
+}
+
+// Close one specific incident: return units, remove from map + array, refresh UI
+function closeIncident(bg) {
+  if (!bg) return;
+  // Return all tasked units
+  Object.keys(bg.taskedUnits).forEach(function(type) {
+    returnFromTasking(bg.taskedUnits[type]);
+  });
+  bg.taskedUnits = {};
+  // Remove from map
+  bg.remove();
+  bg.active = false;
+  // Remove from active list
+  badGuys = badGuys.filter(function(b) { return b !== bg; });
+  // Update focused
+  if (badGuy === bg) {
+    badGuy = badGuys.length ? badGuys[badGuys.length - 1] : null;
+  }
+  updateAssetCounts();
+  renderTaskings();
+  // If no more incidents, drop back to scanning
+  if (!badGuys.length) {
+    incidentOn = false;
+    setPill('scan', 'Scanning');
+    stopTimer();
+    if (taskingsRenderInt) { clearInterval(taskingsRenderInt); taskingsRenderInt = null; }
+  }
+  addAlert('ok', '<strong>Incident #' + bg.id + ' cleared.</strong> Units returning to patrol.');
+}
+
+// Render the Active Incidents card list in #taskings-panel
+function renderTaskings() {
+  var panel = document.getElementById('taskings-panel');
+  var count = document.getElementById('active-count');
+  if (!panel) return;
+  if (count) count.textContent = badGuys.length;
+  if (!badGuys.length) {
+    panel.innerHTML = '<div class="none" id="tp-empty">No active incidents</div>';
+    return;
+  }
+  var now = Date.now();
+  var html = '';
+  badGuys.forEach(function(bg) {
+    var meta = bg.incidentMeta || {};
+    var label = meta.label || (bg.type ? bg.type.toUpperCase() : 'INCIDENT');
+    var color = meta.color || '';
+    var typeLabels = { car:'vehicle', bike:'bike', person:'person' };
+    var desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + (typeLabels[bg.type] || bg.type);
+    // Timer: live if !timerEnd, frozen at response time if set
+    var elapsedMs = (bg.timerEnd || now) - bg.timerStart;
+    var elapsedSec = Math.floor(elapsedMs / 1000);
+    var mm = Math.floor(elapsedSec / 60), ss = elapsedSec % 60;
+    var timerStr = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    var timerCls = bg.timerEnd ? 'tp-timer locked' : 'tp-timer';
+    // Status
+    var statusText, statusCls = '';
+    if (bg.incidentStatus === 'clearing') {
+      var remSec = Math.max(0, Math.ceil((bg.clearAt - now) / 1000));
+      statusText = 'Clearing in ' + remSec + 's';
+      statusCls = 'clearing';
+    } else if (bg.incidentStatus === 'arrived') {
+      statusText = 'On scene — awaiting vehicle';
+      statusCls = 'arrived';
+    } else if (bg.incidentStatus === 'tasked') {
+      statusText = 'Units en route';
+    } else {
+      statusText = 'Active';
+    }
+    // Tasked unit pills
+    var units = '';
+    ['car','bike','officer','drone'].forEach(function(t) {
+      var a = bg.taskedUnits[t];
+      if (a) units += '<span class="tp-unit ' + t + '">' + a.cfg.label + ' ' + a.id + '</span>';
+    });
+    if (!units) units = '<span class="tp-unit">No units tasked</span>';
+    var cardCls = 'tp-card' + (statusCls ? ' ' + statusCls : '');
+    html += '<div class="' + cardCls + '">' +
+      '<div class="tp-hdr"><span class="tp-label">#' + bg.id + ' — ' + label + '</span><span class="' + timerCls + '">' + timerStr + '</span></div>' +
+      '<div class="tp-desc">' + desc + '</div>' +
+      '<div class="tp-units">' + units + '</div>' +
+      '<div class="tp-status ' + statusCls + '">' + statusText + '</div>' +
+      '</div>';
+  });
+  panel.innerHTML = html;
+}
+
+// Close every active incident (used by Reset)
+function clearAllIncidents() {
+  // Copy first, since closeIncident mutates badGuys
+  var snapshot = badGuys.slice();
+  snapshot.forEach(function(bg) { closeIncident(bg); });
+  badGuys = [];
+  badGuy = null;
+  if (taskingsRenderInt) { clearInterval(taskingsRenderInt); taskingsRenderInt = null; }
+  renderTaskings();
 }
 
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STEP 2 — ROAD NETWORK + AGENT CLASSES + SVG ICONS
 // ══════════════════════════════════════════════════════════════════════════════
+
+
+
 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 var BOSTON_LAT = 42.3551, BOSTON_LNG = -71.0659;
@@ -1320,12 +1558,16 @@ function stopMovement() {
 
 function tick() {
   agents.forEach(function(a) { moveAgent(a); });
-  if (badGuy && badGuy.active) badGuy.move();
+  // Phase 2: iterate all active incidents
+  badGuys.forEach(function(bg) {
+    if (bg.active && bg.maxSpeed > 0) bg.move();
+    checkIncidentArrival(bg);
+    checkIncidentClear(bg);
+  });
   tickCount++;
   if (tickCount % 2 === 0) { updateFOV(); updateCameraFOV(); }  // every other tick for performance
   checkDetection();
   checkCameraDetection();
-  checkCapture();
 }
 
 function moveAgent(agent) {
@@ -1393,12 +1635,13 @@ function moveRoadAgent(agent, remainDist) {
 
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
-  if (agent.status === 'pursuing' && badGuy && badGuy.active) {
+  var tgt = targetFor(agent);
+  if (agent.status === 'pursuing' && tgt && tgt.active) {
     // First fly to scene if still far away, then orbit
-    var droneDist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+    var droneDist = haversineM(agent.lat, agent.lon, tgt.lat, tgt.lon);
     if (droneDist > 60) {
       // Fly toward bad guy at 3x speed
-      agent.bearing = bearingDeg(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+      agent.bearing = bearingDeg(agent.lat, agent.lon, tgt.lat, tgt.lon);
       var flyDist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * 3;
       var flyRad  = agent.bearing * Math.PI / 180;
       agent.lat += (flyDist * Math.cos(flyRad)) / 111320;
@@ -1411,9 +1654,9 @@ function moveDrone(agent, dist) {
     agent._orbitAngle = (agent._orbitAngle + 5) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
     var oR   = 40; // 40m orbit radius
-    var cosLat = Math.cos(badGuy.lat * Math.PI / 180);
-    agent.lat = badGuy.lat + (oR * Math.cos(oRad)) / 111320;
-    agent.lon = badGuy.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
+    var cosLat = Math.cos(tgt.lat * Math.PI / 180);
+    agent.lat = tgt.lat + (oR * Math.cos(oRad)) / 111320;
+    agent.lon = tgt.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
     agent.bearing = (agent._orbitAngle + 90) % 360; // face tangential
     agent.updateMarker();
     return; // skip normal movement
@@ -1437,12 +1680,9 @@ function autoStart() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-reset').disabled = false;
   document.getElementById('btn-deploy').disabled = false;
-  document.getElementById('c-dr').textContent = '3/3';
-  document.getElementById('c-ca').textContent = '10/10';
-  document.getElementById('c-bi').textContent = '10/10';
-  document.getElementById('c-of').textContent = '10/10';
   setPill('scan', 'Scanning');
   doPlaceAgents();
+  updateAssetCounts();  // Phase 2: dynamic counters reflect tasked state
   startMovement();
   // Place mics after a delay so async Overpass camera fetches have time to land
   // — collision avoidance needs to see camera positions to push mics away from them
@@ -1499,14 +1739,13 @@ BadGuy.prototype.move = function() {
   var rad  = this.bearing * Math.PI / 180;
   this.lat += (dist * Math.cos(rad)) / 111320;
   this.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(this.lat * Math.PI / 180));
-  // Disappear if off operational bounds
+  // Disappear if off operational bounds (this incident only)
   if (this.lon < -71.180 || this.lon > -70.952 || this.lat < 42.278 || this.lat > 42.432) {
-    clearIncident();
-    addAlert('warn', 'Incident left operational area. Deploy new incident when ready.');
+    addAlert('warn', 'Incident #' + (this.id || '?') + ' left operational area.');
+    closeIncident(this);
     return;
   }
   this.updateMarker();
-  document.getElementById('i-loc').textContent = this.lat.toFixed(4)+', '+this.lon.toFixed(4);
 };
 
 function snapToRoad(lat, lon, type) {
@@ -1525,24 +1764,8 @@ function snapToRoad(lat, lon, type) {
 }
 
 function clearIncident() {
-  if (badGuy) { badGuy.remove(); badGuy = null; }
-  agents.forEach(function(a) { if (a.status==='pursuing') a.status='patrol'; a._hasVisual=false; });
-  cameras.forEach(function(c) { c._hasVisual = false; });
-  pursuing = { car:null, bike:null, officer:null };
-  incidentOn = false;
-  document.getElementById('bg-panel').style.display='none';
-  document.getElementById('i-type').textContent='None';
-  document.getElementById('i-type').classList.add('none');
-  document.getElementById('i-loc').textContent='--';
-  document.getElementById('i-stat').textContent='Standby';
-  document.getElementById('i-stat').classList.add('none');
-  stopTimer();
-  captureCountdown = 0;
-  clearInterval(captureTimerInt);
-  setPill('scan','Scanning');
-  stopSensorFeed();
-  clearTriangulation();
-  updateFOV();
+  // Legacy entry point — now an alias for clearAllIncidents (multi-incident aware)
+  clearAllIncidents();
 }
 
 // ── FOV POLYGON HELPERS ───────────────────────────────────────────────────────
@@ -1984,46 +2207,15 @@ function closestAgent(type) {
 }
 
 function dispatchPursuit(detector) {
-  var dispatched = [];
-  // Always dispatch a car first — guaranteed
-  if (!pursuing['car'] || pursuing['car'].status !== 'pursuing') {
-    var carUnit = closestAgent('car');
-    if (carUnit) {
-      carUnit.status = 'pursuing';
-      pursuing['car'] = carUnit;
-      carUnit.targetNode = carUnit._pickPursuitTarget();
-      carUnit.pauseUntil = 0;
-      dispatched.push(carUnit.cfg.label + ' ' + carUnit.id);
-    }
-  }
-  // Dispatch closest bike, officer, and drone
-  ['bike','officer','drone'].forEach(function(type) {
-    if (pursuing[type] && pursuing[type].status==='pursuing') return;
-    var a = closestAgent(type);
-    if (a) {
-      a.status='pursuing';
-      pursuing[type]=a;
-      a.targetNode = a._pickPursuitTarget();
-      a.pauseUntil = 0;
-      dispatched.push(a.cfg.label+' '+a.id);
-    }
-  });
-  if (dispatched.length) {
-    detectionCount++;
-    document.getElementById('i-det').textContent = detectionCount;
-    document.getElementById('i-stat').textContent = 'DETECTED';
-    addAlert('bad', '<strong>'+detector.cfg.label+' '+detector.id+' HAS VISUAL</strong>'
-      +' on '+({car:'Red Car',bike:'Red Bike',person:'Red Person'}[badGuy.type])
-      +'. Dispatching: '+dispatched.join(', ')+'.');
-    // Drone specifically announces coordinates to ground units
-    if (detector.type==='drone') {
-      addAlert('warn', 'Drone '+detector.id+' broadcasting position: '
-        +badGuy.lat.toFixed(4)+', '+badGuy.lon.toFixed(4));
-    }
-  }
+  // Phase 2: dispatch happens via 911 call (dispatchToIncident), not FOV detection.
+  // checkDetection still flags _hasVisual on the agent, but we do NOT re-dispatch here.
+  // Optional: log a "visual contact" alert for the focused incident.
+  if (!badGuy || !badGuy.active) return;
+  addAlert('info', detector.cfg.label + ' ' + detector.id + ' has visual on incident #' + (badGuy.id || '?') + '.');
 }
 
 function checkDetection() {
+  // Operates on focused incident (badGuy) for HUD purposes; per-agent dispatch handled by tasking.
   if (!badGuy || !badGuy.active) return;
   agents.forEach(function(a) {
     if (a.status==='captured') return;
@@ -2108,7 +2300,8 @@ function checkCapture() {
 
 // ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
 Agent.prototype._pickPursuitTarget = function() {
-  if (!badGuy || !badGuy.active) { this.status='patrol'; return this._pickTarget(); }
+  var tgt = targetFor(this);
+  if (!tgt || !tgt.active) { this.status='patrol'; this.taskedTo=null; return this._pickTarget(); }
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
   var self=this;
@@ -2122,7 +2315,7 @@ Agent.prototype._pickPursuitTarget = function() {
   var best=valid[0], bestD=Infinity;
   valid.forEach(function(nid){
     var nb=roadGraph.nodes[nid];
-    var d=haversineM(nb.lat,nb.lon,badGuy.lat,badGuy.lon);
+    var d=haversineM(nb.lat,nb.lon,tgt.lat,tgt.lon);
     if(d<bestD){bestD=d;best=nid;}
   });
   return best;
@@ -2409,10 +2602,7 @@ function answer911Call() {
   var callText = _ic_fill(incident.template, tokens);
   var pt = _ic_randomMapPoint();
 
-  // Phase 1: single bad guy. Clear any existing one first.
-  if (typeof badGuy !== 'undefined' && badGuy) {
-    clearIncident();
-  }
+  // Phase 2: multi-incident — no longer clear existing before placing
 
   // Place the bad guy — reuses existing plumbing (snap-to-road, timer, panel, feed)
   placeBadGuy(pt.lat, pt.lng, incident.objType);
@@ -2427,30 +2617,30 @@ function answer911Call() {
       motion:   incident.motion  || 'moving',
       callText: callText
     };
-    // If incident is "still" (distress, shots fired, suspicious vehicle), freeze motion
+    // Phase 2: autonomous motion (no joystick)
     if (incident.motion === 'still') {
       badGuy.maxSpeed = 0;
+      badGuy.speed = 0;
+    } else {
+      badGuy.speed = badGuy.maxSpeed;        // start moving at full speed
+      badGuy.bearing = Math.random() * 360;  // random heading
     }
   }
 
   _ic_display(incident, callText, tokens);
   _ic_speak(callText);
+  // Re-render taskings now that metadata is set (so card shows description)
+  renderTaskings();
 }
 
 document.getElementById('btn-deploy').onclick = answer911Call;
 document.getElementById('btn-reset').onclick=function(){
-  // Stop movement and clear agents
+  // Phase 2: clear all incidents, return all tasked units to patrol, stop movement
+  clearAllIncidents();
   stopMovement();
   removeAllAgents();
   var _cd = document.getElementById('call-display');
   if (_cd) _cd.style.display='none';
-  document.getElementById('i-type').textContent='None';
-  document.getElementById('i-type').classList.add('none');
-  document.getElementById('i-loc').textContent='--';
-  document.getElementById('i-loc').classList.add('none');
-  document.getElementById('i-stat').textContent='Standby';
-  document.getElementById('i-stat').classList.add('none');
-  document.getElementById('i-det').textContent='0';
   resetTimer(); exitDeploy();
   resetAssetVisibility();
   addAlert('info','Resetting — new random deployment...');
