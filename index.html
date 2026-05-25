@@ -154,6 +154,16 @@ body{display:flex;flex-direction:column;}
   0%,100%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) brightness(1);}
   50%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) drop-shadow(0 0 8px var(--warn)) brightness(1.4);}
 }
+.search-marker{width:42px;height:42px;border:2px dashed #f59e0b;border-radius:50%;
+  background:rgba(245,158,11,.10);pointer-events:none;
+  animation:search-pulse 1.8s ease-in-out infinite;
+  display:flex;align-items:center;justify-content:center;
+  color:#f59e0b;font:600 9px sans-serif;letter-spacing:.04em;text-transform:uppercase;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);}
+@keyframes search-pulse{
+  0%,100%{opacity:.7;transform:scale(.9);}
+  50%{opacity:1;transform:scale(1.05);}
+}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -476,21 +486,15 @@ window.addEventListener('load', function() {
     // reflect the off state and any prematurely-created markers are hidden
     applyAssetVisibility();
 
-    // Static Boston Common label — always visible regardless of zoom
+    // Static Boston Common label — anchored in the SW quadrant of the park,
+    // away from the OpenFreeMap style's own park label that appears at higher zooms
     var bcLabel = document.createElement('div');
     bcLabel.style.cssText = 'background:rgba(22,163,74,.85);color:#ffffff;padding:4px 10px;border-radius:4px;'
       + 'font:600 11px sans-serif;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;'
       + 'white-space:nowrap;border:1px solid rgba(255,255,255,.3);text-shadow:0 1px 2px rgba(0,0,0,.6);';
     bcLabel.textContent = 'Boston Common';
     new maplibregl.Marker({ element: bcLabel })
-      .setLngLat([-71.0654, 42.3551])
-      .addTo(map);
-    // Static Public Garden label (sits just west of the Common)
-    var pgLabel = document.createElement('div');
-    pgLabel.style.cssText = bcLabel.style.cssText;
-    pgLabel.textContent = 'Public Garden';
-    new maplibregl.Marker({ element: pgLabel })
-      .setLngLat([-71.0703, 42.3540])
+      .setLngLat([-71.0668, 42.3545])
       .addTo(map);
 
     // Darken all text/label layers for better street name readability
@@ -682,9 +686,27 @@ function placeBadGuy(lat,lng,type){
   bg.clearAt = null;        // set when arrivedAt + 30s
   bg.incidentStatus = 'active';
   bg.maxSpeed = MODE_MAX_SPEED[type] || 30;
+  // Phase 4: CV search position — what units *believe* the suspect's location is.
+  // Initialized to the 911 call's reported location. Updated when any sensor (camera
+  // or unit body/dash cam) FOV-detects the suspect. With no sensor coverage, this
+  // stays stale at the call location → units arrive at empty location → no arrest.
+  bg.searchLat = lat;
+  bg.searchLon = lng;
+  bg.lastDetectedAt = bg.timerStart; // for staleness display
+  bg._detectionLog = {}; // detector_id → last-alert-ms (debounce)
   // Stationary incidents stay put
   if (bg.incidentMeta && bg.incidentMeta.motion === 'still') bg.maxSpeed = 0;
   bg.addToMap();
+  // Phase 4: visual "last known position" marker (amber dashed circle) — shows
+  // where AI thinks the suspect is. When divergence is small, it sits on top of the
+  // suspect (low opacity). As bad guy moves out of sensor coverage, it stays put
+  // at the last known location, making the gap visible.
+  var smEl = document.createElement('div');
+  smEl.className = 'search-marker';
+  smEl.textContent = '#' + bg.id;
+  bg.searchMarker = new maplibregl.Marker({ element: smEl, anchor: 'center' })
+    .setLngLat([bg.searchLon, bg.searchLat])
+    .addTo(map);
   // Phase 2.1: initialize road-graph tracking so motion follows streets, not straight lines
   if (roadNetworkReady) {
     bg.currentNode = nearestNode(bg.lat, bg.lon);
@@ -906,6 +928,8 @@ function closeIncident(bg) {
   bg.taskedUnits = {};
   // Remove from map
   bg.remove();
+  // Phase 4: tear down the search marker
+  if (bg.searchMarker) { try { bg.searchMarker.remove(); } catch(e) {} bg.searchMarker = null; }
   bg.active = false;
   // Remove from active list
   badGuys = badGuys.filter(function(b) { return b !== bg; });
@@ -1737,9 +1761,15 @@ function tick() {
     if (bg.active && bg.maxSpeed > 0) bg.move();
     checkIncidentArrival(bg);
     checkIncidentClear(bg);
+    // Phase 4: keep the search marker positioned and visible based on divergence
+    if (bg.searchMarker) {
+      bg.searchMarker.setLngLat([bg.searchLon, bg.searchLat]);
+      var divergence = haversineM(bg.lat, bg.lon, bg.searchLat, bg.searchLon);
+      var el = bg.searchMarker.getElement();
+      if (el) el.style.opacity = (divergence < 20) ? '0.25' : '1';
+    }
   });
   tickCount++;
-  // FOV must update every tick or it visibly lags the marker at high zoom.
   updateFOV();
   updateCameraFOV();
   checkDetection();
@@ -1816,11 +1846,12 @@ function moveDrone(agent, dist) {
   var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
   var bboxMargin = 0.0008; // ~90m buffer inside
   if (agent.status === 'pursuing' && tgt && tgt.active) {
-    // First fly to scene if still far away, then orbit
-    var droneDist = haversineM(agent.lat, agent.lon, tgt.lat, tgt.lon);
+    // Phase 4: drones loiter over the *search* position (last detected), not the true one.
+    var sp = searchPos(tgt);
+    var droneDist = haversineM(agent.lat, agent.lon, sp.lat, sp.lon);
     if (droneDist > 60) {
-      // Fly toward incident at regular pursuit speed (~1.5x base, set by moveAgent)
-      agent.bearing = bearingDeg(agent.lat, agent.lon, tgt.lat, tgt.lon);
+      // Fly toward last-known at regular pursuit speed (~1.5x base, set by moveAgent)
+      agent.bearing = bearingDeg(agent.lat, agent.lon, sp.lat, sp.lon);
       var flyRad = agent.bearing * Math.PI / 180;
       var newLat = agent.lat + (dist * Math.cos(flyRad)) / 111320;
       var newLon = agent.lon + (dist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
@@ -1830,17 +1861,17 @@ function moveDrone(agent, dist) {
       agent.updateMarker();
       return;
     }
-    // Close enough — orbit tightly above incident (slower than before so it reads as ISR not chase)
+    // Close enough to last-known — orbit there (slow ISR pace)
     if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
     agent._orbitAngle = (agent._orbitAngle + 2.5) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
     var oR   = 40; // 40m orbit radius
-    var cosLat = Math.cos(tgt.lat * Math.PI / 180);
-    agent.lat = tgt.lat + (oR * Math.cos(oRad)) / 111320;
-    agent.lon = tgt.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
-    agent.bearing = (agent._orbitAngle + 90) % 360; // face tangential
+    var cosLat = Math.cos(sp.lat * Math.PI / 180);
+    agent.lat = sp.lat + (oR * Math.cos(oRad)) / 111320;
+    agent.lon = sp.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
+    agent.bearing = (agent._orbitAngle + 90) % 360;
     agent.updateMarker();
-    return; // skip normal movement
+    return;
   } else {
     var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
     if (distFromHome > HOME_RADIUS_M * 0.9) {
@@ -2517,12 +2548,13 @@ function dispatchAcoustic(validated) {
 }
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
-function inFOV(agent) {
-  if (!badGuy || !badGuy.active) return false;
-  var dist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+function inFOV(agent, target) {
+  var t = target || badGuy;
+  if (!t || !t.active) return false;
+  var dist = haversineM(agent.lat, agent.lon, t.lat, t.lon);
   if (dist > agent.cfg.fovDist) return false;
   if (agent.cfg.fovAngle >= 360) return true;
-  var diff = Math.abs(((bearingDeg(agent.lat,agent.lon,badGuy.lat,badGuy.lon) - agent.bearing)+540)%360-180);
+  var diff = Math.abs(((bearingDeg(agent.lat,agent.lon,t.lat,t.lon) - agent.bearing)+540)%360-180);
   return diff <= agent.cfg.fovAngle / 2;
 }
 
@@ -2539,34 +2571,39 @@ function closestAgent(type) {
 }
 
 function dispatchPursuit(detector) {
-  // Phase 2: dispatch happens via 911 call (dispatchToIncident), not FOV detection.
-  // checkDetection still flags _hasVisual on the agent, but we do NOT re-dispatch here.
-  // Optional: log a "visual contact" alert for the focused incident.
-  if (!badGuy || !badGuy.active) return;
-  addAlert('info', detector.cfg.label + ' ' + detector.id + ' has visual on incident #' + (badGuy.id || '?') + '.');
+  // Phase 2: kept as a no-op shell. Dispatch happens via 911 call. Detection alerts
+  // are now emitted by recordDetection (Phase 4) directly from check{Camera,}Detection.
 }
 
+// Phase 4: iterate every active incident; fire a detection event for every agent whose
+// own FOV overlaps. Agent dash/body cams always work — these are not gated by the user toggle.
 function checkDetection() {
-  // Operates on focused incident (badGuy) for HUD purposes; per-agent dispatch handled by tasking.
-  if (!badGuy || !badGuy.active) return;
+  if (!badGuys.length) return;
   agents.forEach(function(a) {
-    if (a.status==='captured') return;
-    if (inFOV(a)) {
-      if (!a._hasVisual) { a._hasVisual=true; dispatchPursuit(a); }
-    } else {
-      a._hasVisual = false;
-    }
+    if (a.status === 'captured') return;
+    // Track visual state per (agent, bg) for HUD coloring on the FOV polygon
+    a._hasVisual = false;
+    badGuys.forEach(function(bg) {
+      if (!bg.active) return;
+      if (inFOV(a, bg)) {
+        a._hasVisual = true;
+        recordDetection(bg, 'agent-' + a.type + '-' + a.id,
+          a.cfg.label + ' ' + a.id + ' ' + (a.type === 'drone' ? 'overhead camera' : 'dash/body cam'),
+          'match: ' + _detMatch(bg));
+      }
+    });
   });
 }
 
 // Does the bad guy fall inside ANY of this camera's wedges?
-function inCameraFOV(cam) {
-  if (!badGuy || !badGuy.active) return false;
+function inCameraFOV(cam, target) {
+  var t = target || badGuy;
+  if (!t || !t.active) return false;
   var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-  var dist = haversineM(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  var dist = haversineM(cam.lat, cam.lon, t.lat, t.lon);
   if (dist > cfg.fovDist) return false;
   var bearings = cam.subtype === 'surveillance' ? surveillanceBearings(cam) : trafficCamBearings(cam);
-  var brgToBG  = bearingDeg(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  var brgToBG  = bearingDeg(cam.lat, cam.lon, t.lat, t.lon);
   var half = cfg.fovAngle / 2;
   return bearings.some(function(b) {
     var diff = Math.abs(((brgToBG - b) + 540) % 360 - 180);
@@ -2574,19 +2611,25 @@ function inCameraFOV(cam) {
   });
 }
 
+// Phase 4: same pattern — iterate every active incident. Cameras only fire if the user
+// has the relevant sensor type toggled ON (assetVisibility key). This gates the thesis:
+// without sensors, only the patrolling units' own cams produce detections.
 function checkCameraDetection() {
-  if (!badGuy || !badGuy.active) return;
+  if (!badGuys.length) return;
   cameras.forEach(function(cam) {
-    if (inCameraFOV(cam)) {
-      if (!cam._hasVisual) {
+    var visKey = cam.subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
+    if (!assetVisibility[visKey]) { cam._hasVisual = false; return; }
+    cam._hasVisual = false;
+    badGuys.forEach(function(bg) {
+      if (!bg.active) return;
+      if (inCameraFOV(cam, bg)) {
         cam._hasVisual = true;
-        // Build a synthetic "detector" for dispatchPursuit's alert plumbing
-        var camLabel = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
-        dispatchPursuit({ type: 'camera', id: cam.id, cfg: { label: camLabel } });
+        var label = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
+        recordDetection(bg, 'cam-' + cam.subtype + '-' + cam.id,
+          label + ' #' + cam.id,
+          'match: ' + _detMatch(bg));
       }
-    } else {
-      cam._hasVisual = false;
-    }
+    });
   });
 }
 
@@ -2630,6 +2673,44 @@ function checkCapture() {
   }
 }
 
+// ── Phase 4: CV detection & "last known position" routing ──────────────────
+// Each incident has a searchLat/searchLon — units pursue this, not the suspect's
+// true position. Detections (any camera or unit FOV overlapping the suspect) fire
+// alerts and refresh the search position to the suspect's current location.
+
+// Returns the lat/lon units should route toward for this incident
+function searchPos(bg) {
+  if (bg.searchLat != null && bg.searchLon != null) return { lat: bg.searchLat, lon: bg.searchLon };
+  return { lat: bg.lat, lon: bg.lon };
+}
+
+// Fire a detection: refresh search position + write an alert (debounced per detector-target)
+function recordDetection(bg, detectorKey, detectorLabel, matchSummary) {
+  if (!bg || !bg.active) return;
+  var now = Date.now();
+  bg._detectionLog = bg._detectionLog || {};
+  var lastFired = bg._detectionLog[detectorKey] || 0;
+  // Always refresh the search position when a detector has visual — this is the
+  // mechanism the thesis depends on. Coverage = fresh search position = faster catch.
+  bg.searchLat = bg.lat;
+  bg.searchLon = bg.lon;
+  bg.lastDetectedAt = now;
+  // But only spam the alert feed once every 8 seconds per detector
+  if (now - lastFired < 8000) return;
+  bg._detectionLog[detectorKey] = now;
+  addAlert('warn', '<strong>' + detectorLabel + ' &mdash; visual on Incident #' + bg.id + '</strong> &mdash; ' + matchSummary + '.');
+}
+
+// Build a short "match description" string for an incident
+function _detMatch(bg) {
+  var m = bg.incidentMeta || {};
+  var color = m.color || '';
+  if (bg.type === 'person') {
+    return (color ? color + ' ' : '') + (m.apparel || 'suspect');
+  }
+  return (color ? color : '') + ' ' + (bg.type === 'car' ? 'vehicle' : 'bike');
+}
+
 // ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
 Agent.prototype._pickPursuitTarget = function() {
   var tgt = targetFor(this);
@@ -2637,33 +2718,29 @@ Agent.prototype._pickPursuitTarget = function() {
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
   var self = this;
-  // During pursuit: relax highway restrictions — any road is fair game.
-  // Find best FORWARD option (excluding the node we just came from)
+  // Phase 4: route to the *search* position (last detected) — NOT the true position.
+  // Without sensor coverage this stays stale at the call location.
+  var sp = searchPos(tgt);
   var forward = n.neighbors.filter(function(nid) {
     return nid != self.prevNode && roadGraph.nodes[nid];
   });
   var bestFwd = null, bestFwdD = Infinity;
   forward.forEach(function(nid) {
     var nb = roadGraph.nodes[nid];
-    var d = haversineM(nb.lat, nb.lon, tgt.lat, tgt.lon);
-    // Small bias toward the neighbor closest to current heading — prevents
-    // perpendicular swerves when multiple neighbors are similarly close to target.
+    var d = haversineM(nb.lat, nb.lon, sp.lat, sp.lon);
     var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
     var headingDelta = Math.abs(((brg - self.bearing) + 540) % 360 - 180);
-    var score = d + headingDelta * 0.15; // 0.15m penalty per degree off-heading
+    var score = d + headingDelta * 0.15;
     if (score < bestFwdD) { bestFwdD = score; bestFwd = nid; }
   });
-  // Consider backtracking — only if it would close the gap meaningfully more
-  // than the best forward option (>30m). Prevents oscillation at intersections.
   if (self.prevNode && roadGraph.nodes[self.prevNode]) {
     var pNode = roadGraph.nodes[self.prevNode];
-    var pDist = haversineM(pNode.lat, pNode.lon, tgt.lat, tgt.lon);
+    var pDist = haversineM(pNode.lat, pNode.lon, sp.lat, sp.lon);
     if (!bestFwd || pDist < bestFwdD - 30) {
       return self.prevNode;
     }
   }
   if (bestFwd) return bestFwd;
-  // True dead-end fallback
   var any = n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
   return any.length ? any[0] : this.currentNode;
 };
