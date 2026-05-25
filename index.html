@@ -1107,8 +1107,8 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
-  car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
-  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|track|living_street)$/,
+  car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service|living_street|road|busway)$/,
+  bike:    /^(secondary|tertiary|.*_link|residential|unclassified|service|cycleway|path|track|living_street|road)$/,
   officer: /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
