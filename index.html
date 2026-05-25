@@ -722,8 +722,8 @@ function placeBadGuy(lat,lng,type){
   startTimer(); setPill('active','Active Incident');
   // Dispatch closest available car/bike/officer to this incident
   dispatchToIncident(bg);
-  var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
-  addAlert('bad','<strong>911 INCIDENT #'+bg.id+'</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
+  // Note: dispatch alert is fired by answer911Call AFTER incidentMeta is
+  // attached, so it can include the call's color/object/location.
   renderTaskings();
   // Start 1-second timer refresh for tasking cards (only once)
   if (!taskingsRenderInt) taskingsRenderInt = setInterval(renderTaskings, 1000);
@@ -3137,7 +3137,38 @@ var SHIRT_COLORS = [['blue',18],['black',18],['white',15],['gray',12],['red',10]
 var BIKE_COLORS  = [['black',30],['silver',15],['blue',15],['red',12],['white',10],['green',8],['yellow',5],['orange',5]];
 
 var BOSTON_STREETS   = ['Boylston Street','Tremont Street','Charles Street','Beacon Street','Park Street','Arlington Street','Berkeley Street','Clarendon Street','Newbury Street','Commonwealth Avenue','Stuart Street','Washington Street'];
-var BOSTON_LANDMARKS = ['the Frog Pond','the Park Street T entrance','the Public Garden','the State House','the Common bandstand','the Brewer Fountain','the Boylston T entrance','Government Center','the Soldiers Monument','Beacon Hill'];
+// Landmarks now carry coordinates so the 911 call references the closest one
+// to the spawn point — no more "Beacon Hill" called in when the suspect is up
+// in the West End.
+var BOSTON_LANDMARKS = [
+  { name:'the Frog Pond',                 lat:42.3554, lon:-71.0660 },
+  { name:'the Park Street T entrance',    lat:42.3565, lon:-71.0626 },
+  { name:'the Public Garden',             lat:42.3537, lon:-71.0700 },
+  { name:'the State House',               lat:42.3588, lon:-71.0637 },
+  { name:'the Common bandstand',          lat:42.3548, lon:-71.0648 },
+  { name:'the Brewer Fountain',           lat:42.3565, lon:-71.0645 },
+  { name:'the Boylston T entrance',       lat:42.3527, lon:-71.0641 },
+  { name:'Government Center',             lat:42.3604, lon:-71.0589 },
+  { name:'the Soldiers Monument',         lat:42.3552, lon:-71.0656 },
+  { name:'Beacon Hill',                   lat:42.3589, lon:-71.0680 },
+  { name:'Quincy Market',                 lat:42.3600, lon:-71.0547 },
+  { name:'Faneuil Hall',                  lat:42.3601, lon:-71.0566 },
+  { name:'the Charles/MGH T station',     lat:42.3613, lon:-71.0708 },
+  { name:'Massachusetts General Hospital',lat:42.3633, lon:-71.0686 },
+  { name:'Downtown Crossing',             lat:42.3551, lon:-71.0608 },
+  { name:'the Theater District',          lat:42.3517, lon:-71.0643 },
+  { name:'North Station',                 lat:42.3656, lon:-71.0622 },
+  { name:'Bowdoin T station',             lat:42.3614, lon:-71.0626 }
+];
+function _ic_nearestLandmark(lat, lng) {
+  var best = BOSTON_LANDMARKS[0], bestD = Infinity;
+  for (var i = 0; i < BOSTON_LANDMARKS.length; i++) {
+    var lm = BOSTON_LANDMARKS[i];
+    var d = haversineM(lat, lng, lm.lat, lm.lon);
+    if (d < bestD) { bestD = d; best = lm; }
+  }
+  return best.name;
+}
 var DIRECTIONS       = ['north','south','east','west','northbound on Tremont','southbound on Charles','eastbound on Boylston','westbound on Beacon','toward Government Center','toward the Common'];
 
 function _ic_wpick(arr) {
@@ -3234,7 +3265,8 @@ function answer911Call() {
     direction: _ic_pick(DIRECTIONS),
     address:   realStreet ? (addressNum + ' ' + realStreet) : _ic_randomAddress(),
     street:    realStreet || _ic_pick(BOSTON_STREETS),
-    landmark:  _ic_pick(BOSTON_LANDMARKS)
+    // Landmark must reflect the actual spawn location, not a random pick
+    landmark:  _ic_nearestLandmark(pt.lat, pt.lng)
   };
   var callText = _ic_fill(incident.template, tokens);
 
@@ -3268,6 +3300,22 @@ function answer911Call() {
 
   _ic_display(incident, callText, tokens);
   _ic_speak(callText);
+  // Phase 4.2: dispatch alert mirrors the 911 call's metadata exactly so the
+  // operator sees: incident category, color + object, location string actually
+  // used in the call. (renderTaskings card and detector "visual" alerts already
+  // reference incidentMeta.color, so all three are now consistent.)
+  if (typeof badGuy !== 'undefined' && badGuy) {
+    var objNoun = incident.objType === 'car'   ? 'car'
+                : incident.objType === 'bike'  ? 'bicycle'
+                : 'person';
+    var locStr = (incident.template.indexOf('{address}')  >= 0) ? tokens.address
+               : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
+               : (incident.template.indexOf('{landmark}') >= 0) ? tokens.landmark
+               : null;
+    addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id + ' &mdash; ' + incident.label +
+      '</strong>: ' + tokens.color + ' ' + objNoun +
+      (locStr ? ' near ' + locStr : '') + '.');
+  }
   // Re-render taskings now that metadata is set (so card shows description)
   renderTaskings();
 }
