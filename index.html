@@ -595,6 +595,12 @@ function placeBadGuy(lat,lng,type){
   // Stationary incidents stay put
   if (bg.incidentMeta && bg.incidentMeta.motion === 'still') bg.maxSpeed = 0;
   bg.addToMap();
+  // Phase 2.1: initialize road-graph tracking so motion follows streets, not straight lines
+  if (roadNetworkReady) {
+    bg.currentNode = nearestNode(bg.lat, bg.lon);
+    bg.prevNode = null;
+    bg.targetNode = null; // picked on first move tick
+  }
   badGuys.push(bg);
   badGuy = bg;              // focused incident (most recent)
   incidentOn = true;
@@ -1733,13 +1739,85 @@ BadGuy.prototype.remove = function() {
   if (this.marker) { this.marker.remove(); this.marker = null; }
 };
 
+// Phase 2.1: pick next road node to flee toward — prefers continuing direction.
+// Uses highway filter appropriate to bad guy type (car → driving roads, person/bike → paths).
+BadGuy.prototype._pickTarget = function() {
+  if (!roadNetworkReady) return null;
+  var n = roadGraph.nodes[this.currentNode];
+  if (!n || !n.neighbors.length) return this.currentNode;
+  var self = this;
+  var agentType = (this.type === 'car') ? 'car' : 'officer';
+  var hwFilter = ALLOWED_HIGHWAYS[agentType];
+  var valid = n.neighbors.filter(function(nid) {
+    if (nid == self.prevNode) return false;
+    var nb = roadGraph.nodes[nid];
+    if (!nb) return false;
+    if (hwFilter && n.neighborHW && n.neighborHW[nid]) {
+      var info = n.neighborHW[nid];
+      var hw = info && info.hw ? info.hw : info;
+      if (!hwFilter.test(hw)) return false;
+    }
+    return true;
+  });
+  // Dead end: allow backtracking
+  if (!valid.length) valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
+  if (!valid.length) return this.currentNode;
+  if (valid.length === 1) return valid[0];
+  // Prefer continuing in current approach direction (smallest angle delta)
+  var approach = this.bearing;
+  if (this.prevNode && roadGraph.nodes[this.prevNode]) {
+    var prev = roadGraph.nodes[this.prevNode];
+    approach = bearingDeg(prev.lat, prev.lon, this.lat, this.lon);
+  }
+  var bestNid = valid[0], bestDiff = 360;
+  valid.forEach(function(nid) {
+    var nb = roadGraph.nodes[nid];
+    var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
+    var diff = Math.abs(((brg - approach) + 540) % 360 - 180);
+    if (diff < bestDiff) { bestDiff = diff; bestNid = nid; }
+  });
+  return bestNid;
+};
+
 BadGuy.prototype.move = function() {
   if (this.speed <= 0) return;
-  var dist = (this.speed / 3.6) * (TICK_MS / 1000);
-  var rad  = this.bearing * Math.PI / 180;
-  this.lat += (dist * Math.cos(rad)) / 111320;
-  this.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(this.lat * Math.PI / 180));
-  // Disappear if off operational bounds (this incident only)
+  if (!roadNetworkReady) return; // wait for road graph; movement starts on next tick once ready
+  // Lazy-init graph tracking on first move (placeBadGuy may have set these already)
+  if (!this.currentNode) {
+    this.currentNode = nearestNode(this.lat, this.lon);
+    this.prevNode = null;
+    this.targetNode = null;
+  }
+  if (!this.targetNode || !roadGraph.nodes[this.targetNode]) {
+    this.targetNode = this._pickTarget();
+  }
+  if (!this.targetNode) return;
+  // Advance along the segment, hopping nodes if needed within one tick
+  var remain = (this.speed / 3.6) * (TICK_MS / 1000);
+  var MAX_HOPS = 4;
+  for (var h = 0; h < MAX_HOPS && remain > 0.5; h++) {
+    var tgt = roadGraph.nodes[this.targetNode];
+    if (!tgt) break;
+    var distToTgt = haversineM(this.lat, this.lon, tgt.lat, tgt.lon);
+    if (distToTgt > 1) {
+      this.bearing = bearingDeg(this.lat, this.lon, tgt.lat, tgt.lon);
+    }
+    if (remain >= distToTgt) {
+      // Snap to node, advance
+      this.lat = tgt.lat; this.lon = tgt.lon;
+      this.prevNode = this.currentNode;
+      this.currentNode = this.targetNode;
+      this.targetNode = this._pickTarget();
+      remain -= distToTgt;
+      if (!this.targetNode) break;
+    } else {
+      var ratio = remain / Math.max(distToTgt, 1);
+      this.lat += (tgt.lat - this.lat) * ratio;
+      this.lon += (tgt.lon - this.lon) * ratio;
+      remain = 0;
+    }
+  }
+  // Bounds check
   if (this.lon < -71.180 || this.lon > -70.952 || this.lat < 42.278 || this.lat > 42.432) {
     addAlert('warn', 'Incident #' + (this.id || '?') + ' left operational area.');
     closeIncident(this);
