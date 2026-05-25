@@ -338,7 +338,8 @@ body{display:flex;flex-direction:column;}
     </div>
     <div style="flex:1;"></div>
     <div class="ps" style="font-size:10px;color:var(--dim);line-height:1.9;">
-      <div>&#128205; Boston Common &middot; 5mi grid</div>
+      <div>&#128205; Boston Common &middot; ~2.5mi operational area</div>
+      <div>&#128739; Per-unit patrol radius: 1mi from spawn</div>
       <div>&#128506; OpenStreetMap / OpenFreeMap</div>
       <div id="rdstat" style="color:var(--brd);">Road network: loading...</div>
     </div>
@@ -404,6 +405,23 @@ window.addEventListener('load', function() {
     // Apply default visibility (traffic cams + mics start off) so badges
     // reflect the off state and any prematurely-created markers are hidden
     applyAssetVisibility();
+
+    // Static Boston Common label — always visible regardless of zoom
+    var bcLabel = document.createElement('div');
+    bcLabel.style.cssText = 'background:rgba(22,163,74,.85);color:#ffffff;padding:4px 10px;border-radius:4px;'
+      + 'font:600 11px sans-serif;letter-spacing:.08em;text-transform:uppercase;pointer-events:none;'
+      + 'white-space:nowrap;border:1px solid rgba(255,255,255,.3);text-shadow:0 1px 2px rgba(0,0,0,.6);';
+    bcLabel.textContent = 'Boston Common';
+    new maplibregl.Marker({ element: bcLabel })
+      .setLngLat([-71.0654, 42.3551])
+      .addTo(map);
+    // Static Public Garden label (sits just west of the Common)
+    var pgLabel = document.createElement('div');
+    pgLabel.style.cssText = bcLabel.style.cssText;
+    pgLabel.textContent = 'Public Garden';
+    new maplibregl.Marker({ element: pgLabel })
+      .setLngLat([-71.0703, 42.3540])
+      .addTo(map);
 
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
@@ -913,7 +931,7 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
   car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
-  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
+  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|track|living_street)$/,
   officer: /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
@@ -1662,6 +1680,9 @@ function moveRoadAgent(agent, remainDist) {
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
   var tgt = targetFor(agent);
+  // Operational BBOX matches the Overpass query bounds. Used for both patrol and pursuit clamps.
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var bboxMargin = 0.0008; // ~90m buffer inside
   if (agent.status === 'pursuing' && tgt && tgt.active) {
     // First fly to scene if still far away, then orbit
     var droneDist = haversineM(agent.lat, agent.lon, tgt.lat, tgt.lon);
@@ -1669,8 +1690,11 @@ function moveDrone(agent, dist) {
       // Fly toward incident at regular pursuit speed (~1.5x base, set by moveAgent)
       agent.bearing = bearingDeg(agent.lat, agent.lon, tgt.lat, tgt.lon);
       var flyRad = agent.bearing * Math.PI / 180;
-      agent.lat += (dist * Math.cos(flyRad)) / 111320;
-      agent.lon += (dist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      var newLat = agent.lat + (dist * Math.cos(flyRad)) / 111320;
+      var newLon = agent.lon + (dist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      // Defensive: keep drone inside BBOX even during pursuit
+      agent.lat = Math.max(BBOX_S + bboxMargin, Math.min(BBOX_N - bboxMargin, newLat));
+      agent.lon = Math.max(BBOX_W + bboxMargin, Math.min(BBOX_E - bboxMargin, newLon));
       agent.updateMarker();
       return;
     }
@@ -1698,15 +1722,13 @@ function moveDrone(agent, dist) {
   var newLat = agent.lat + (dist * Math.cos(rad)) / 111320;
   var newLon = agent.lon + (dist * Math.sin(rad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
   // Hard-clamp to operational BBOX so drones don't drift outside the demo area.
-  // BBOX values match the Overpass query bounds (S=42.338, W=-71.090, N=42.373, E=-71.042).
-  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
-  var margin = 0.0008; // ~90m buffer inside the box
-  if (newLat < BBOX_S + margin || newLat > BBOX_N - margin ||
-      newLon < BBOX_W + margin || newLon > BBOX_E - margin) {
+  // BBOX_S/N/W/E and bboxMargin are declared at the top of moveDrone.
+  if (newLat < BBOX_S + bboxMargin || newLat > BBOX_N - bboxMargin ||
+      newLon < BBOX_W + bboxMargin || newLon > BBOX_E - bboxMargin) {
     // Bounce off the edge: reverse bearing with small jitter, clamp position inside box
     agent.bearing = (agent.bearing + 180 + (Math.random() * 60 - 30) + 360) % 360;
-    newLat = Math.max(BBOX_S + margin, Math.min(BBOX_N - margin, newLat));
-    newLon = Math.max(BBOX_W + margin, Math.min(BBOX_E - margin, newLon));
+    newLat = Math.max(BBOX_S + bboxMargin, Math.min(BBOX_N - bboxMargin, newLat));
+    newLon = Math.max(BBOX_W + bboxMargin, Math.min(BBOX_E - bboxMargin, newLon));
   }
   agent.lat = newLat;
   agent.lon = newLon;
@@ -1761,7 +1783,46 @@ BadGuy.prototype.addToMap = function() {
   this.marker = new maplibregl.Marker({
     element: el, rotationAlignment:'map', pitchAlignment:'map'
   }).setLngLat([this.lon, this.lat]).addTo(map);
+  // Hover popup with incident info
+  var self = this;
+  el.addEventListener('mouseenter', function() {
+    if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
+    sensorPopup = new maplibregl.Popup({closeButton:false, closeOnClick:false, offset:14, maxWidth:'240px'})
+      .setLngLat([self.lon, self.lat])
+      .setHTML(badGuyPopupHTML(self))
+      .addTo(map);
+  });
+  el.addEventListener('mouseleave', function() {
+    if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
+  });
 };
+
+function badGuyPopupHTML(bg) {
+  var meta = bg.incidentMeta || {};
+  var typeLabels = {car:'Vehicle', bike:'Bike', person:'On foot'};
+  var statusMap = {
+    'active':   'Active — fleeing',
+    'tasked':   'Units en route',
+    'arrived':  'On scene — awaiting vehicle',
+    'clearing': 'Containment — clearing'
+  };
+  var statusText = statusMap[bg.incidentStatus] || 'Active';
+  var elapsed = Math.round(((bg.timerEnd || Date.now()) - bg.timerStart) / 1000);
+  var mm = Math.floor(elapsed/60), ss = elapsed%60;
+  var timer = (mm<10?'0':'') + mm + ':' + (ss<10?'0':'') + ss;
+  var colorWord = meta.color ? meta.color.charAt(0).toUpperCase() + meta.color.slice(1) : '';
+  var taskedList = [];
+  ['car','bike','officer','drone'].forEach(function(t){
+    var a = bg.taskedUnits && bg.taskedUnits[t];
+    if (a) taskedList.push(a.cfg.label + ' ' + a.id);
+  });
+  return '<div style="font:600 10px sans-serif;letter-spacing:.6px;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Incident #' + (bg.id||'?') + '</div>' +
+    '<div style="font:600 12px sans-serif;color:#ffffff;margin-bottom:3px;">' + (meta.label || 'Suspect') + '</div>' +
+    '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + (colorWord ? colorWord + ' ' : '') + (typeLabels[bg.type] || bg.type) + '</div>' +
+    '<div style="font:10px sans-serif;color:#7dd3fc;margin-bottom:3px;">' + statusText + '</div>' +
+    '<div style="font:10px \'JetBrains Mono\',monospace;color:#f59e0b;margin-bottom:3px;">Response time: ' + timer + '</div>' +
+    (taskedList.length ? '<div style="font:10px sans-serif;color:#94a3b8;">Tasked: ' + taskedList.join(', ') + '</div>' : '');
+}
 
 BadGuy.prototype.updateMarker = function() {
   if (this.marker) this.marker.setLngLat([this.lon, this.lat]);
@@ -1778,7 +1839,8 @@ BadGuy.prototype._pickTarget = function() {
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
   var self = this;
-  var agentType = (this.type === 'car') ? 'car' : 'officer';
+  // Match agent type to bad guy type so bikes don't use footways/pedestrian-only paths
+  var agentType = (this.type === 'car') ? 'car' : (this.type === 'bike' ? 'bike' : 'officer');
   var hwFilter = ALLOWED_HIGHWAYS[agentType];
   var valid = n.neighbors.filter(function(nid) {
     if (nid == self.prevNode) return false;
@@ -1860,7 +1922,8 @@ BadGuy.prototype.move = function() {
 
 function snapToRoad(lat, lon, type) {
   // Map bad guy type to agent type for road lookup
-  var agentType = (type === 'car') ? 'car' : 'officer'; // bike+person use officer roads
+  // Bike has its own filter (no footways/pedestrian); person uses officer (can use sidewalks)
+  var agentType = (type === 'car') ? 'car' : (type === 'bike' ? 'bike' : 'officer');
   var pool = (roadGraph.nodesByType && roadGraph.nodesByType[agentType]) || roadGraph.nodeIds || [];
   if (!pool.length) return { lat: lat, lon: lon };
   var best = null, bestD = Infinity;
