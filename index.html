@@ -116,9 +116,11 @@ body{display:flex;flex-direction:column;}
 .tp-card .tp-status{font-size:9px;color:var(--mut);margin-top:4px;text-transform:uppercase;letter-spacing:.3px;}
 .tp-card .tp-status.arrived{color:var(--warn);}
 .tp-card .tp-status.clearing{color:var(--ok);}
-.agent-tasked-ring{position:absolute;top:50%;left:50%;width:30px;height:30px;margin-left:-15px;margin-top:-15px;border:2px solid var(--warn);border-radius:50%;
-  animation:tasked-pulse 1.4s ease-out infinite;pointer-events:none;}
-@keyframes tasked-pulse{0%{transform:scale(.6);opacity:1;}100%{transform:scale(1.8);opacity:0;}}
+.agent-tasked-glow{animation:tasked-glow 1.4s ease-in-out infinite;}
+@keyframes tasked-glow{
+  0%,100%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) brightness(1);}
+  50%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) drop-shadow(0 0 8px var(--warn)) brightness(1.4);}
+}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -643,12 +645,10 @@ function dispatchToIncident(bg) {
     best.status = 'pursuing';
     best.targetNode = best._pickPursuitTarget();
     best.pauseUntil = 0;
-    // Visual: pulsing ring overlay on the marker
-    if (best.marker && best.marker._element && !best.marker._element.querySelector('.agent-tasked-ring')) {
-      var ring = document.createElement('div');
-      ring.className = 'agent-tasked-ring';
-      best.marker._element.style.position = 'relative';
-      best.marker._element.appendChild(ring);
+    // Visual: the tasked unit's icon pulses brighter with an orange glow.
+    // No DOM children, no position override — just a CSS animation class on the marker.
+    if (best.marker && best.marker._element) {
+      best.marker._element.classList.add('agent-tasked-glow');
     }
     bg.taskedUnits[type] = best;
   });
@@ -671,8 +671,7 @@ function returnFromTasking(agent) {
   agent.status = 'patrol';
   agent._hasVisual = false;
   if (agent.marker && agent.marker._element) {
-    var ring = agent.marker._element.querySelector('.agent-tasked-ring');
-    if (ring) ring.remove();
+    agent.marker._element.classList.remove('agent-tasked-glow');
   }
   agent.targetNode = agent._pickTarget();
   agent.pauseUntil = 0;
@@ -1646,18 +1645,17 @@ function moveDrone(agent, dist) {
     // First fly to scene if still far away, then orbit
     var droneDist = haversineM(agent.lat, agent.lon, tgt.lat, tgt.lon);
     if (droneDist > 60) {
-      // Fly toward bad guy at 3x speed
+      // Fly toward incident at regular pursuit speed (~1.5x base, set by moveAgent)
       agent.bearing = bearingDeg(agent.lat, agent.lon, tgt.lat, tgt.lon);
-      var flyDist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * 3;
-      var flyRad  = agent.bearing * Math.PI / 180;
-      agent.lat += (flyDist * Math.cos(flyRad)) / 111320;
-      agent.lon += (flyDist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      var flyRad = agent.bearing * Math.PI / 180;
+      agent.lat += (dist * Math.cos(flyRad)) / 111320;
+      agent.lon += (dist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
       agent.updateMarker();
       return;
     }
-    // Close enough — orbit tightly above bad guy
+    // Close enough — orbit tightly above incident (slower than before so it reads as ISR not chase)
     if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
-    agent._orbitAngle = (agent._orbitAngle + 5) % 360;
+    agent._orbitAngle = (agent._orbitAngle + 2.5) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
     var oR   = 40; // 40m orbit radius
     var cosLat = Math.cos(tgt.lat * Math.PI / 180);
