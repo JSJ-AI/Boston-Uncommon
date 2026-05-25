@@ -819,8 +819,15 @@ function renderTaskings() {
     var meta = bg.incidentMeta || {};
     var label = meta.label || (bg.type ? bg.type.toUpperCase() : 'INCIDENT');
     var color = meta.color || '';
-    var typeLabels = { car:'vehicle', bike:'bike', person:'person' };
-    var desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + (typeLabels[bg.type] || bg.type);
+    var desc;
+    if (bg.type === 'person') {
+      // "Person in orange shirt" — preserves what the color modifies
+      var apparel = meta.apparel || 'clothing';
+      desc = color ? ('Suspect in ' + color + ' ' + apparel) : 'Suspect on foot';
+    } else {
+      var typeWord = (bg.type === 'car') ? 'vehicle' : (bg.type === 'bike' ? 'bike' : bg.type);
+      desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
+    }
     // Timer: live if !timerEnd, frozen at response time if set
     var elapsedMs = (bg.timerEnd || now) - bg.timerStart;
     var elapsedSec = Math.floor(elapsedMs / 1000);
@@ -1799,7 +1806,6 @@ BadGuy.prototype.addToMap = function() {
 
 function badGuyPopupHTML(bg) {
   var meta = bg.incidentMeta || {};
-  var typeLabels = {car:'Vehicle', bike:'Bike', person:'On foot'};
   var statusMap = {
     'active':   'Active — fleeing',
     'tasked':   'Units en route',
@@ -1810,7 +1816,15 @@ function badGuyPopupHTML(bg) {
   var elapsed = Math.round(((bg.timerEnd || Date.now()) - bg.timerStart) / 1000);
   var mm = Math.floor(elapsed/60), ss = elapsed%60;
   var timer = (mm<10?'0':'') + mm + ':' + (ss<10?'0':'') + ss;
-  var colorWord = meta.color ? meta.color.charAt(0).toUpperCase() + meta.color.slice(1) : '';
+  var color = meta.color || '';
+  var desc;
+  if (bg.type === 'person') {
+    var apparel = meta.apparel || 'clothing';
+    desc = color ? ('Suspect in ' + color + ' ' + apparel) : 'Suspect on foot';
+  } else {
+    var typeWord = (bg.type === 'car') ? 'Vehicle' : (bg.type === 'bike' ? 'Bike' : bg.type);
+    desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
+  }
   var taskedList = [];
   ['car','bike','officer','drone'].forEach(function(t){
     var a = bg.taskedUnits && bg.taskedUnits[t];
@@ -1818,7 +1832,7 @@ function badGuyPopupHTML(bg) {
   });
   return '<div style="font:600 10px sans-serif;letter-spacing:.6px;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Incident #' + (bg.id||'?') + '</div>' +
     '<div style="font:600 12px sans-serif;color:#ffffff;margin-bottom:3px;">' + (meta.label || 'Suspect') + '</div>' +
-    '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + (colorWord ? colorWord + ' ' : '') + (typeLabels[bg.type] || bg.type) + '</div>' +
+    '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + desc + '</div>' +
     '<div style="font:10px sans-serif;color:#7dd3fc;margin-bottom:3px;">' + statusText + '</div>' +
     '<div style="font:10px \'JetBrains Mono\',monospace;color:#f59e0b;margin-bottom:3px;">Response time: ' + timer + '</div>' +
     (taskedList.length ? '<div style="font:10px sans-serif;color:#94a3b8;">Tasked: ' + taskedList.join(', ') + '</div>' : '');
@@ -2497,21 +2511,36 @@ Agent.prototype._pickPursuitTarget = function() {
   if (!tgt || !tgt.active) { this.status='patrol'; this.taskedTo=null; return this._pickTarget(); }
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
-  var self=this;
-  // During pursuit: relax highway restrictions — all units can use any road to catch target
-  var valid = n.neighbors.filter(function(nid) {
-    if (nid==self.prevNode) return false;
-    return roadGraph.nodes[nid];
+  var self = this;
+  // During pursuit: relax highway restrictions — any road is fair game.
+  // Find best FORWARD option (excluding the node we just came from)
+  var forward = n.neighbors.filter(function(nid) {
+    return nid != self.prevNode && roadGraph.nodes[nid];
   });
-  if (!valid.length) valid=n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
-  if (!valid.length) return this.currentNode;
-  var best=valid[0], bestD=Infinity;
-  valid.forEach(function(nid){
-    var nb=roadGraph.nodes[nid];
-    var d=haversineM(nb.lat,nb.lon,tgt.lat,tgt.lon);
-    if(d<bestD){bestD=d;best=nid;}
+  var bestFwd = null, bestFwdD = Infinity;
+  forward.forEach(function(nid) {
+    var nb = roadGraph.nodes[nid];
+    var d = haversineM(nb.lat, nb.lon, tgt.lat, tgt.lon);
+    // Small bias toward the neighbor closest to current heading — prevents
+    // perpendicular swerves when multiple neighbors are similarly close to target.
+    var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
+    var headingDelta = Math.abs(((brg - self.bearing) + 540) % 360 - 180);
+    var score = d + headingDelta * 0.15; // 0.15m penalty per degree off-heading
+    if (score < bestFwdD) { bestFwdD = score; bestFwd = nid; }
   });
-  return best;
+  // Consider backtracking — only if it would close the gap meaningfully more
+  // than the best forward option (>30m). Prevents oscillation at intersections.
+  if (self.prevNode && roadGraph.nodes[self.prevNode]) {
+    var pNode = roadGraph.nodes[self.prevNode];
+    var pDist = haversineM(pNode.lat, pNode.lon, tgt.lat, tgt.lon);
+    if (!bestFwd || pDist < bestFwdD - 30) {
+      return self.prevNode;
+    }
+  }
+  if (bestFwd) return bestFwd;
+  // True dead-end fallback
+  var any = n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
+  return any.length ? any[0] : this.currentNode;
 };
 
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
@@ -2718,6 +2747,9 @@ function _ic_wpick(arr) {
 }
 function _ic_pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
 
+var APPAREL_ITEMS = ['shirt','jacket','hoodie','sweatshirt','vest','jersey','coat'];
+function _ic_pickApparel() { return _ic_pick(APPAREL_ITEMS); }
+
 function _ic_colorFor(objType) {
   if (objType === 'car')  return _ic_wpick(CAR_COLORS);
   if (objType === 'bike') return _ic_wpick(BIKE_COLORS);
@@ -2806,6 +2838,7 @@ function answer911Call() {
       id:       incident.id,
       label:    incident.label,
       color:    tokens.color,
+      apparel:  (incident.objType === 'person') ? _ic_pickApparel() : null,
       subkind:  incident.subkind || null,
       motion:   incident.motion  || 'moving',
       callText: callText
