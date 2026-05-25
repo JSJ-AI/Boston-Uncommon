@@ -166,15 +166,16 @@ body{display:flex;flex-direction:column;}
   0%,100%{opacity:.7;transform:scale(.9);}
   50%{opacity:1;transform:scale(1.05);}
 }
-/* Solid black panel for the bad guy hover popup — opaque background, bright text,
-   red incident border. No transparency. */
+/* Solid black panel for the bad guy hover popup. !important is required
+   because MapLibre's own popup CSS loads after our inline styles and would
+   otherwise override our background at equal specificity. */
 .bg-popup .maplibregl-popup-content{
-  background:#000;
-  color:#f1f5f9;
-  border:1px solid rgba(239,68,68,.65);
-  border-radius:8px;
-  padding:12px 14px;
-  box-shadow:0 10px 30px rgba(0,0,0,.7);
+  background:#000 !important;
+  color:#f1f5f9 !important;
+  border:1px solid rgba(239,68,68,.65) !important;
+  border-radius:8px !important;
+  padding:12px 14px !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.7) !important;
 }
 .bg-popup .maplibregl-popup-tip{
   border-top-color:#000 !important;
@@ -1218,8 +1219,7 @@ function nearestNode(lat, lon) {
 }
 
 // Return the name of any street touching this road-graph node (or null if unnamed)
-function streetNameAtNode(nodeId) {
-  if (!nodeId) return null;
+function _wayNameAtNode(nodeId) {
   var n = roadGraph.nodes[nodeId];
   if (!n || !n.neighborHW || !roadGraph.wayNames) return null;
   var keys = Object.keys(n.neighborHW);
@@ -1227,6 +1227,34 @@ function streetNameAtNode(nodeId) {
     var info = n.neighborHW[keys[i]];
     if (info && info.wayId && roadGraph.wayNames[info.wayId]) {
       return roadGraph.wayNames[info.wayId];
+    }
+  }
+  return null;
+}
+
+function streetNameAtNode(nodeId) {
+  if (!nodeId || !roadGraph.nodes[nodeId]) return null;
+  // 1) Direct hit — way name at this node
+  var direct = _wayNameAtNode(nodeId);
+  if (direct) return direct;
+  // 2) BFS outward up to 3 hops looking for any named way. This rescues person
+  //    incidents that spawn on unnamed footways in Boston Common — they'll
+  //    resolve to the nearest named perimeter street.
+  var visited = {};
+  visited[nodeId] = true;
+  var queue = [{ id: nodeId, depth: 0 }];
+  while (queue.length) {
+    var item = queue.shift();
+    if (item.depth >= 3) continue;
+    var n = roadGraph.nodes[item.id];
+    if (!n || !n.neighbors) continue;
+    for (var i = 0; i < n.neighbors.length; i++) {
+      var nb = n.neighbors[i];
+      if (visited[nb]) continue;
+      visited[nb] = true;
+      var name = _wayNameAtNode(nb);
+      if (name) return name;
+      queue.push({ id: nb, depth: item.depth + 1 });
     }
   }
   return null;
@@ -1836,6 +1864,19 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
+  // Pursuit hold: stop moving once the agent is at the scene. Without this,
+  // A* keeps recomputing the path as the search position drifts a few metres
+  // and the agent oscillates back and forth between adjacent road nodes.
+  if (agent.status === 'pursuing' && agent.taskedTo) {
+    var holdTgt = targetFor(agent);
+    if (holdTgt && holdTgt.active) {
+      var holdSp = searchPos(holdTgt);
+      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < 30) {
+        agent.updateMarker && agent.updateMarker();
+        return;
+      }
+    }
+  }
   // Skip intersection pause when pursuing — police don't stop at red lights in pursuit
   if (agent.status !== 'pursuing' && agent.pauseUntil && Date.now() < agent.pauseUntil) {
     if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
