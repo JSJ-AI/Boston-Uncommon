@@ -848,9 +848,10 @@ function updateAssetCounts() {
 }
 
 // Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
-// Option B+D: car arrival counts within 30m (no need to drive across grass);
-// officer arrival within 12m can also trigger the 30s clear when no car-road
-// is close enough to the suspect.
+// Arrival thresholds are deliberately generous because police cars and bikes
+// often can't drive ONTO the road the suspect is on (suspect on a footway in
+// Boston Common, car stuck at the nearest curb 40-80m away). For a demo, the
+// nearest-road position counts as "on scene".
 function checkIncidentArrival(bg) {
   if (!bg || !bg.active) return;
   if (bg.incidentStatus === 'clearing') return;
@@ -862,10 +863,10 @@ function checkIncidentArrival(bg) {
       dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
     }
   });
-  // First arrival (timer freeze) = any non-drone within 15m
+  // First arrival (timer freeze) = any non-drone within 30m
   var firstArrival = null;
   ['car','bike','officer'].forEach(function(t) {
-    if (dists[t] && dists[t].d < 15 && !firstArrival) firstArrival = dists[t].agent;
+    if (dists[t] && dists[t].d < 30 && !firstArrival) firstArrival = dists[t].agent;
   });
   if (firstArrival && !bg.timerEnd) {
     bg.timerEnd = Date.now();
@@ -878,14 +879,38 @@ function checkIncidentArrival(bg) {
     addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
       firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
   }
-  // Clear trigger: car within 30m OR officer within 12m
-  var carClose    = dists.car     && dists.car.d     < 30;
-  var officerClose= dists.officer && dists.officer.d < 12;
-  if ((carClose || officerClose) && !bg.arrivedAt) {
+  // Clear trigger: each unit type has a generous "close enough" radius matched
+  // to what its road graph can actually reach:
+  //   - car: 60m (curb-parked when suspect is in a park/lot interior)
+  //   - bike: 45m (similar — bikes can't use footways/pedestrian paths)
+  //   - officer: 25m (on foot — usually right next to suspect)
+  var carClose     = dists.car     && dists.car.d     < 60;
+  var bikeClose    = dists.bike    && dists.bike.d    < 45;
+  var officerClose = dists.officer && dists.officer.d < 25;
+  // Adaptive fallback: if any tasked unit has been within 80m of bg for 10s
+  // without triggering clear, treat as arrived. This catches the case where
+  // the suspect's road graph is disjoint from the unit's, leaving the unit
+  // physically stuck just outside the normal threshold.
+  if (!bg._near80SinceTs) bg._near80SinceTs = {};
+  var stuckClose = false, stuckAgent = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 80) {
+      if (!bg._near80SinceTs[t]) bg._near80SinceTs[t] = Date.now();
+      if (Date.now() - bg._near80SinceTs[t] > 10000 && !stuckClose) {
+        stuckClose = true; stuckAgent = dists[t].agent;
+      }
+    } else {
+      bg._near80SinceTs[t] = 0;
+    }
+  });
+  if ((carClose || bikeClose || officerClose || stuckClose) && !bg.arrivedAt) {
     bg.arrivedAt = Date.now();
     bg.clearAt = bg.arrivedAt + 30000;
     bg.incidentStatus = 'clearing';
-    var who = carClose ? dists.car.agent : dists.officer.agent;
+    var who = carClose ? dists.car.agent
+            : officerClose ? dists.officer.agent
+            : bikeClose ? dists.bike.agent
+            : stuckAgent;
     addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
       who.cfg.label + ' ' + who.id + '. Clearing in 30s...');
   }
@@ -1789,7 +1814,9 @@ function tick() {
 
 function moveAgent(agent) {
   // Pursuit mode: 50% speed boost
-  var speedMult = (agent.status === 'pursuing') ? 1.5 : 1.0;
+  // Pursuit speed multiplier — units in pursuit go significantly faster than
+  // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
+  var speedMult = (agent.status === 'pursuing') ? 2.2 : 1.0;
   var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
