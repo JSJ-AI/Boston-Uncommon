@@ -96,7 +96,7 @@ body{display:flex;flex-direction:column;}
   text-transform:uppercase;color:#7dd3fc;margin-bottom:8px;}
 
 /* buttons */
-.btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
   padding:9px 12px;border-radius:6px;border:1px solid var(--brd);background:var(--sur2);
   color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;
   cursor:pointer;transition:all .15s;margin-bottom:6px;}
@@ -104,8 +104,10 @@ body{display:flex;flex-direction:column;}
 .btn:hover{background:#1e2430;border-color:#3a4050;}
 .bp{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.4);color:var(--acc);}
 .bp:hover{background:rgba(0,212,255,.18);border-color:var(--acc);}
-.bd{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.4);color:var(--bad);}
-.bd:hover{background:rgba(239,68,68,.18);border-color:var(--bad);}
+.bd{background:rgba(0,212,255,.08);border-color:rgba(125,211,252,.45);padding:13px 14px;}
+.bd:hover{background:rgba(0,212,255,.16);border-color:#7dd3fc;}
+.bd .bd-icon{color:var(--bad);font-size:18px;text-shadow:0 0 6px rgba(239,68,68,.5);line-height:1;}
+.bd .bd-text{color:#7dd3fc;font-size:15px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;}
 .btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 
 /* asset grid */
@@ -164,12 +166,12 @@ body{display:flex;flex-direction:column;}
   0%,100%{opacity:.7;transform:scale(.9);}
   50%{opacity:1;transform:scale(1.05);}
 }
-/* Dark theme for the bad guy hover popup — readable against bright urban tiles */
-.bg-popup .maplibregl-popup-content{background:#0d1220;color:#e2e8f0;
+/* Slate panel for the bad guy hover popup — readable against bright urban tiles, not pure black */
+.bg-popup .maplibregl-popup-content{background:#1e293b;color:#e2e8f0;
   border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:12px 14px;
-  box-shadow:0 10px 30px rgba(0,0,0,.6);}
-.bg-popup .maplibregl-popup-tip{border-top-color:#0d1220 !important;
-  border-bottom-color:#0d1220 !important;}
+  box-shadow:0 10px 30px rgba(0,0,0,.55);}
+.bg-popup .maplibregl-popup-tip{border-top-color:#1e293b !important;
+  border-bottom-color:#1e293b !important;}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -386,7 +388,7 @@ body{display:flex;flex-direction:column;}
     </div>
     <div class="ps">
       <span class="psl">911 Dispatch</span>
-      <button class="btn bd" id="btn-deploy" disabled>&#128222; Answer 911 Call</button>
+      <button class="btn bd" id="btn-deploy" disabled><span class="bd-icon">&#128222;</span><span class="bd-text">Answer 911 Call</span></button>
       <div id="call-display" style="display:none;margin-top:10px;font-size:11px;line-height:1.5;background:rgba(0,0,0,0.25);border-left:3px solid var(--bad);padding:9px 10px;border-radius:3px;">
         <div id="call-label" style="font-weight:600;color:var(--bad);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;"></div>
         <div id="call-body" style="color:var(--ink);font-style:italic;"></div>
@@ -2951,13 +2953,13 @@ var INCIDENT_TYPES = [
     template:"Hello, yes, I need to report a hit and run. A {color} sedan just sideswiped a vehicle near {address}. They're heading {direction}. Please send someone." },
   { id:'carjack',     label:'Carjacking in progress',       objType:'car',    weight:1,
     template:"Nine-one-one, there's a carjacking happening near {address}. The suspect took off in a {color} car going {direction}." },
-  { id:'sus_vehicle', label:'Suspicious vehicle',           objType:'car',    weight:2,
+  { id:'sus_vehicle', label:'Suspicious vehicle',           objType:'car',    weight:2, motion:'still',
     template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
   { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
     template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
   { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
     template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
-  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group',
+  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still',
     template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
   { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
     template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
@@ -3092,7 +3094,9 @@ function answer911Call() {
       badGuy.maxSpeed = 0;
       badGuy.speed = 0;
     } else {
-      badGuy.speed = badGuy.maxSpeed;        // start moving at full speed
+      // Vary speed 60-100% of max so the demo doesn't look like every suspect
+      // is sprinting at top speed
+      badGuy.speed = badGuy.maxSpeed * (0.6 + Math.random() * 0.4);
       badGuy.bearing = Math.random() * 360;  // random heading
     }
   }
