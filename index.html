@@ -877,11 +877,24 @@ function checkIncidentArrival(bg) {
   var carNear     = dists.car     && dists.car.d     < 80;
   var bikeNear    = dists.bike    && dists.bike.d    < 60;
   var officerNear = dists.officer && dists.officer.d < 40;
+  // Closest-reachable-point fallback: if any tasked road unit is sitting at
+  // its A* goal node (the closest point on its own road graph to the suspect)
+  // and the suspect is on a road that unit can't drive on (footway in a park,
+  // etc), freeze the bg anyway. The unit physically can't get closer.
+  var atGoal = false, atGoalAgent = null;
+  Object.keys(bg.taskedUnits).forEach(function(t) {
+    if (t === 'drone') return;
+    var a = bg.taskedUnits[t];
+    if (a && a.status === 'pursuing' && a._pursuitGoal && a.currentNode === a._pursuitGoal) {
+      atGoal = true; if (!atGoalAgent) atGoalAgent = a;
+    }
+  });
   // First arrival: any unit reaches NEAR → freeze bg, freeze response timer.
   var firstArrival = null;
   if      (carNear)     firstArrival = dists.car.agent;
   else if (bikeNear)    firstArrival = dists.bike.agent;
   else if (officerNear) firstArrival = dists.officer.agent;
+  else if (atGoal)      firstArrival = atGoalAgent;
   if (firstArrival && !bg.timerEnd) {
     bg.timerEnd = Date.now();
     bg.maxSpeed = 0;
@@ -1217,18 +1230,29 @@ function nearestNode(lat, lon) {
   return best;
 }
 
-// Return the name of any street touching this road-graph node (or null if unnamed)
+// Return the name of the dominant street touching this node. At an intersection
+// (multiple ways meeting at one node), picks the way with the MOST edges
+// through this node — that's the road the spawn point is "on", not a side
+// street that just touches it. Fixes the Storrow/Charles confusion at Charles
+// Circle-type junctions.
 function _wayNameAtNode(nodeId) {
   var n = roadGraph.nodes[nodeId];
   if (!n || !n.neighborHW || !roadGraph.wayNames) return null;
+  var votes = {};   // wayId → edge count
+  var names = {};   // wayId → name
   var keys = Object.keys(n.neighborHW);
   for (var i = 0; i < keys.length; i++) {
     var info = n.neighborHW[keys[i]];
     if (info && info.wayId && roadGraph.wayNames[info.wayId]) {
-      return roadGraph.wayNames[info.wayId];
+      votes[info.wayId] = (votes[info.wayId] || 0) + 1;
+      names[info.wayId] = roadGraph.wayNames[info.wayId];
     }
   }
-  return null;
+  var bestId = null, bestV = 0;
+  for (var wid in votes) {
+    if (votes[wid] > bestV) { bestV = votes[wid]; bestId = wid; }
+  }
+  return bestId ? names[bestId] : null;
 }
 
 function streetNameAtNode(nodeId) {
@@ -1586,10 +1610,13 @@ Agent.prototype._pickTarget = function() {
 
   var self = this;
   var hwFilter = ALLOWED_HIGHWAYS[this.type];
+  // Anti-oscillation: track last 3 visited nodes so the agent doesn't bounce
+  // back and forth between two nodes at a dead-end-ish junction.
+  this._recentNodes = this._recentNodes || [];
 
-  // Build valid candidate list: no backtracking, within home radius, correct highway type
-  var valid = n.neighbors.filter(function(nid) {
+  function _passes(nid, skipRecent) {
     if (nid == self.prevNode) return false;
+    if (!skipRecent && self._recentNodes.indexOf(nid) >= 0) return false;
     var nb = roadGraph.nodes[nid];
     if (!nb) return false;
     if (haversineM(nb.lat, nb.lon, self.homeLat, self.homeLon) > HOME_RADIUS_M) return false;
@@ -1599,9 +1626,19 @@ Agent.prototype._pickTarget = function() {
       if (!hwFilter.test(hw)) return false;
     }
     return true;
-  });
+  }
 
-  // Dead end — allow backtracking
+  // Pass 1: standard filter + avoid recently-visited (the anti-oscillation pass)
+  var valid = n.neighbors.filter(function(nid) { return _passes(nid, false); });
+  // Pass 2: relax the "avoid recent" constraint
+  if (!valid.length) valid = n.neighbors.filter(function(nid) { return _passes(nid, true); });
+  // Pass 3: relax home radius and hwFilter (any reachable non-prev neighbor)
+  if (!valid.length) {
+    valid = n.neighbors.filter(function(nid) {
+      return nid != self.prevNode && roadGraph.nodes[nid];
+    });
+  }
+  // Pass 4: truly stuck — allow backtrack as absolute last resort
   if (!valid.length) {
     valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
   }
@@ -1911,6 +1948,10 @@ function moveRoadAgent(agent, remainDist) {
       agent.lon = target.lon;
       agent.prevNode    = agent.currentNode;
       agent.currentNode = agent.targetNode;
+      // Track last 3 visited nodes for anti-oscillation in _pickTarget
+      agent._recentNodes = agent._recentNodes || [];
+      agent._recentNodes.push(agent.currentNode);
+      while (agent._recentNodes.length > 3) agent._recentNodes.shift();
       var arrNode2 = roadGraph.nodes[agent.prevNode];
       if (arrNode2 && arrNode2.neighborHW && arrNode2.neighborHW[agent.currentNode]) {
         var edgeInfo2 = arrNode2.neighborHW[agent.currentNode];
@@ -2897,12 +2938,23 @@ Agent.prototype._pickPursuitTarget = function() {
   if (!n || !n.neighbors.length) return this.currentNode;
   var sp = searchPos(tgt);
 
+  // Early exit: if I'm already at my goal node, stay. No more turn choices that
+  // could send me back the way I came.
+  if (this._pursuitGoal && this.currentNode === this._pursuitGoal) {
+    return this.currentNode;
+  }
+
   // ── Goal: nearest road-graph node to searchPos, in THIS agent's allowed graph
-  // (cached — only recompute if searchPos has drifted by 20m+)
+  // (cached — only recompute if searchPos has drifted by 20m+ AND we're not
+  // already in the vicinity — once close, commit to current goal to avoid
+  // oscillation from goal flipping between adjacent road nodes as the suspect
+  // moves a few metres).
+  var agentToBg = haversineM(this.lat, this.lon, sp.lat, sp.lon);
+  var inVicinity = agentToBg < 120;
   var spDrift = this._pursuitSp
     ? haversineM(this._pursuitSp.lat, this._pursuitSp.lon, sp.lat, sp.lon)
     : Infinity;
-  if (spDrift > 20) {
+  if (spDrift > 20 && !inVicinity) {
     var pool = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
     var gId = null, gD = Infinity;
     for (var i = 0; i < pool.length; i++) {
@@ -2914,6 +2966,18 @@ Agent.prototype._pickPursuitTarget = function() {
     this._pursuitGoal = gId;
     this._pursuitSp = { lat: sp.lat, lon: sp.lon };
     this._pursuitPath = null;     // invalidate cached path
+  } else if (!this._pursuitGoal) {
+    // First call — initialize goal regardless of vicinity
+    var pool0 = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
+    var gId0 = null, gD0 = Infinity;
+    for (var i0 = 0; i0 < pool0.length; i0++) {
+      var pn0 = roadGraph.nodes[pool0[i0]];
+      if (!pn0) continue;
+      var d0 = haversineM(pn0.lat, pn0.lon, sp.lat, sp.lon);
+      if (d0 < gD0) { gD0 = d0; gId0 = pool0[i0]; }
+    }
+    this._pursuitGoal = gId0;
+    this._pursuitSp = { lat: sp.lat, lon: sp.lon };
   }
 
   if (!this._pursuitGoal) return n.neighbors[0];
