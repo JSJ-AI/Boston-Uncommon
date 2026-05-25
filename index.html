@@ -1865,6 +1865,10 @@ function tick() {
   checkCameraDetection();
 }
 
+// Pursuit speed multipliers per unit type. Car is dramatically faster than
+// bike in real police chases (interceptor at 70+ mph, bike ~18 mph max) and
+// the demo should reflect that visually.
+var PURSUIT_MULT = { drone: 1.5, car: 3.0, bike: 1.8, officer: 2.0 };
 function moveAgent(agent) {
   // Single hold rule: on-scene units don't move. checkIncidentArrival sets
   // this status the moment any unit catches the bg; all tasked road units
@@ -1873,10 +1877,7 @@ function moveAgent(agent) {
     agent.updateMarker && agent.updateMarker();
     return;
   }
-  // Pursuit mode: 50% speed boost
-  // Pursuit speed multiplier — units in pursuit go significantly faster than
-  // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
-  var speedMult = (agent.status === 'pursuing') ? 2.2 : 1.0;
+  var speedMult = (agent.status === 'pursuing') ? (PURSUIT_MULT[agent.type] || 2.0) : 1.0;
   var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
@@ -2982,6 +2983,22 @@ Agent.prototype._pickPursuitTarget = function() {
   if (this._recentNodes.indexOf(nextNode) >= 0) {
     this._pursuitGoal = this.currentNode;
     return this.currentNode;
+  }
+  // U-turn cooldown: a >120° direction change within 2 seconds of the last
+  // turn is blocked. Forces the unit to commit to its current heading long
+  // enough to actually complete the maneuver, preventing the "missed turn
+  // can't go back, A* now says go back, but as I turn around A* says no go
+  // forward again" oscillation cycle.
+  var nb = roadGraph.nodes[nextNode];
+  if (nb && this.bearing != null) {
+    var nextBearing = bearingDeg(this.lat, this.lon, nb.lat, nb.lon);
+    var delta = Math.abs(((nextBearing - this.bearing) + 540) % 360 - 180);
+    if (delta > 120 && (Date.now() - (this.lastTurnTime || 0)) < 2000) {
+      return this.currentNode;  // hold the line — cooldown active
+    }
+    if (delta > 60) {
+      this.lastTurnTime = Date.now();  // record real turn for next cooldown
+    }
   }
   return nextNode;
 };
