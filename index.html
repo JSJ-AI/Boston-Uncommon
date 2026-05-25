@@ -782,14 +782,18 @@ function dispatchToIncident(bg) {
 // to the closest one instead of going back to patrol.
 function returnFromTasking(agent) {
   if (!agent) return;
-  // Clear current tasking state
+  // Clear current tasking state + A* cache so the next pursuit starts fresh
   agent.taskedTo = null;
   agent._hasVisual = false;
+  agent._pursuitGoal = null;
+  agent._pursuitPath = null;
+  agent._pursuitSp   = null;
+  agent._recentNodes = [];
   // Look for another active incident that needs this unit type
   var bestBg = null, bestD = Infinity;
   badGuys.forEach(function(bg) {
     if (!bg || !bg.active) return;
-    if (bg.incidentStatus === 'clearing') return; // already containing
+    if (bg.caught || bg.incidentStatus === 'clearing') return; // already containing
     if (bg.taskedUnits && bg.taskedUnits[agent.type]) return; // already has one
     var d = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
     if (d < bestD) { bestD = d; bestBg = bg; }
@@ -810,7 +814,7 @@ function returnFromTasking(agent) {
     renderTaskings();
     return;
   }
-  // Otherwise: actually return to patrol
+  // Otherwise: actually return to patrol (this also handles on-scene → patrol)
   agent.status = 'patrol';
   if (agent.marker && agent.marker._element) {
     agent.marker._element.classList.remove('agent-tasked-glow');
@@ -856,85 +860,62 @@ function updateAssetCounts() {
   setSensorBadge('c-mic', mics.length, 'mics');
 }
 
-// Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
-// Two radii per unit type:
-//   NEAR  → bad guy freezes (slightly wider — gives unit approach buffer)
-//   CLOSE → 30s clearing countdown starts
-// This avoids the "officer at 30m oscillates while bg drifts" bug — bg freezes
-// first, then officer closes the last few meters without anything moving.
+// ── ARRIVAL / CATCH ──────────────────────────────────────────────────────────
+// One rule: when any tasked road unit is within its catch radius of the bad
+// guy's *actual* position, OR is parked at its A* goal because the road graph
+// can't get it any closer, the suspect is contained.
+//
+// Catch radii are deliberately generous — this is a sensor-coverage demo, not
+// a tactical-realism sim. A police car visible on screen "next to" the suspect
+// reads as a catch.
+//   car:     80m
+//   bike:    60m
+//   officer: 30m
+//
+// When a catcher is identified:
+//   • bg.maxSpeed = bg.speed = 0          (suspect stops physically moving)
+//   • bg.caught = true                    (one boolean — no incidentStatus dance)
+//   • bg.arrivedAt + bg.clearAt set       (30s clearing countdown)
+//   • all road units tasked to this bg → status='on-scene' (they stop moving;
+//     moveAgent skips on-scene units. No per-tick distance checks needed.)
+//   • response timer freezes, alert fires
+var CATCH_RADIUS = { car: 80, bike: 60, officer: 30 };
 function checkIncidentArrival(bg) {
-  if (!bg || !bg.active) return;
-  if (bg.incidentStatus === 'clearing') return;
-  // Per-unit distances from incident
-  var dists = {};
-  Object.keys(bg.taskedUnits).forEach(function(type) {
+  if (!bg || !bg.active || bg.caught) return;
+  var catcher = null;
+  ['car','bike','officer'].forEach(function(type) {
+    if (catcher) return;
     var a = bg.taskedUnits[type];
-    if (a && a.status === 'pursuing') {
-      dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
+    if (!a) return;
+    if (haversineM(a.lat, a.lon, bg.lat, bg.lon) < CATCH_RADIUS[type]) {
+      catcher = a; return;
+    }
+    // Stranded at A* goal — physically can't get any closer on this unit's
+    // road graph (bridge over river, suspect in park footway interior, etc.)
+    if (a._pursuitGoal && a.currentNode === a._pursuitGoal) {
+      catcher = a;
     }
   });
-  // NEAR radii (freeze the suspect — approach buffer)
-  var carNear     = dists.car     && dists.car.d     < 80;
-  var bikeNear    = dists.bike    && dists.bike.d    < 60;
-  var officerNear = dists.officer && dists.officer.d < 40;
-  // Closest-reachable-point fallback: if any tasked road unit is sitting at
-  // its A* goal node (the closest point on its own road graph to the suspect)
-  // and the suspect is on a road that unit can't drive on (footway in a park,
-  // etc), freeze the bg anyway. The unit physically can't get closer.
-  var atGoal = false, atGoalAgent = null;
+  if (!catcher) return;
+  // Catch! One transition does everything.
+  bg.caught = true;
+  bg.timerEnd = Date.now();
+  bg.maxSpeed = 0;
+  bg.speed = 0;
+  bg.incidentStatus = 'clearing';
+  bg.arrivedAt = Date.now();
+  bg.clearAt = bg.arrivedAt + 30000;
+  // Freeze all road units tasked to this incident
   Object.keys(bg.taskedUnits).forEach(function(t) {
     if (t === 'drone') return;
     var a = bg.taskedUnits[t];
-    if (a && a.status === 'pursuing' && a._pursuitGoal && a.currentNode === a._pursuitGoal) {
-      atGoal = true; if (!atGoalAgent) atGoalAgent = a;
-    }
+    if (a && a.status === 'pursuing') a.status = 'on-scene';
   });
-  // First arrival: any unit reaches NEAR → freeze bg, freeze response timer.
-  var firstArrival = null;
-  if      (carNear)     firstArrival = dists.car.agent;
-  else if (bikeNear)    firstArrival = dists.bike.agent;
-  else if (officerNear) firstArrival = dists.officer.agent;
-  else if (atGoal)      firstArrival = atGoalAgent;
-  if (firstArrival && !bg.timerEnd) {
-    bg.timerEnd = Date.now();
-    bg.maxSpeed = 0;
-    bg.speed = 0;
-    bg.incidentStatus = 'arrived';
-    var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
-    responseTimings.push(respSec);
-    updateAvgResponseDisplay();
-    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
-      firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
-  }
-  // CLOSE radii (clearing countdown — actual "on scene")
-  var carClose     = dists.car     && dists.car.d     < 60;
-  var bikeClose    = dists.bike    && dists.bike.d    < 45;
-  var officerClose = dists.officer && dists.officer.d < 25;
-  // Adaptive fallback: any tasked unit within 80m for 10s without triggering
-  // clear — catches edge cases (suspect on a disconnected road graph).
-  if (!bg._near80SinceTs) bg._near80SinceTs = {};
-  var stuckClose = false, stuckAgent = null;
-  ['car','bike','officer'].forEach(function(t) {
-    if (dists[t] && dists[t].d < 80) {
-      if (!bg._near80SinceTs[t]) bg._near80SinceTs[t] = Date.now();
-      if (Date.now() - bg._near80SinceTs[t] > 10000 && !stuckClose) {
-        stuckClose = true; stuckAgent = dists[t].agent;
-      }
-    } else {
-      bg._near80SinceTs[t] = 0;
-    }
-  });
-  if ((carClose || bikeClose || officerClose || stuckClose) && !bg.arrivedAt) {
-    bg.arrivedAt = Date.now();
-    bg.clearAt = bg.arrivedAt + 30000;
-    bg.incidentStatus = 'clearing';
-    var who = carClose ? dists.car.agent
-            : officerClose ? dists.officer.agent
-            : bikeClose ? dists.bike.agent
-            : stuckAgent;
-    addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
-      who.cfg.label + ' ' + who.id + '. Clearing in 30s...');
-  }
+  var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
+  responseTimings.push(respSec);
+  updateAvgResponseDisplay();
+  addAlert('ok', '<strong>Incident #' + bg.id + ' contained</strong> &mdash; ' +
+    catcher.cfg.label + ' ' + catcher.id + ' on scene. Response: ' + respSec + 's. Clearing in 30s...');
 }
 
 function updateAvgResponseDisplay() {
@@ -1885,6 +1866,13 @@ function tick() {
 }
 
 function moveAgent(agent) {
+  // Single hold rule: on-scene units don't move. checkIncidentArrival sets
+  // this status the moment any unit catches the bg; all tasked road units
+  // then freeze together. Replaces the per-tick distance hold check.
+  if (agent.status === 'on-scene') {
+    agent.updateMarker && agent.updateMarker();
+    return;
+  }
   // Pursuit mode: 50% speed boost
   // Pursuit speed multiplier — units in pursuit go significantly faster than
   // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
@@ -1900,23 +1888,6 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
-  // Pursuit hold: stop moving once on scene. Hold radius matches each unit's
-  // CLOSE-clear radius (car 60m, bike 45m, officer 25m) so as soon as the
-  // unit triggers "contained by", it just sits there. Prevents path-recompute
-  // oscillation around the goal node.
-  if (agent.status === 'pursuing' && agent.taskedTo) {
-    var holdTgt = targetFor(agent);
-    if (holdTgt && holdTgt.active) {
-      var holdSp = searchPos(holdTgt);
-      var holdR = agent.type === 'car'  ? 60
-                : agent.type === 'bike' ? 45
-                : 25; // officer
-      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < holdR) {
-        agent.updateMarker && agent.updateMarker();
-        return;
-      }
-    }
-  }
   // Skip intersection pause when pursuing — police don't stop at red lights in pursuit
   if (agent.status !== 'pursuing' && agent.pauseUntil && Date.now() < agent.pauseUntil) {
     if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
@@ -2988,19 +2959,14 @@ Agent.prototype._pickPursuitTarget = function() {
     this._pursuitPath = findRoadPath(this.currentNode, this._pursuitGoal, hwFilter);
   }
 
-  // No path (goal unreachable from here in this agent's graph) — fall back
-  // to greedy single-hop so the unit at least moves toward the suspect
+  // No path (goal unreachable from here in this agent's graph) — STOP.
+  // Mark currentNode as the new goal so the at-goal early exit kicks in next
+  // tick, and the arrival logic in checkIncidentArrival counts this as
+  // on-scene. This is what prevents the "car at bridge underpass oscillating
+  // because no road edge takes me over the river" pathology.
   if (!this._pursuitPath || !this._pursuitPath.length) {
-    var any = n.neighbors.filter(function(nid){ return roadGraph.nodes[nid]; });
-    if (!any.length) return this.currentNode;
-    var goalNode = roadGraph.nodes[this._pursuitGoal];
-    var best = any[0], bestD = Infinity;
-    any.forEach(function(nid) {
-      var nb = roadGraph.nodes[nid];
-      var d = haversineM(nb.lat, nb.lon, goalNode.lat, goalNode.lon);
-      if (d < bestD) { bestD = d; best = nid; }
-    });
-    return best;
+    this._pursuitGoal = this.currentNode;
+    return this.currentNode;
   }
 
   // ── Follow the path: next node after current
@@ -3008,7 +2974,16 @@ Agent.prototype._pickPursuitTarget = function() {
   if (idx === -1 || idx >= this._pursuitPath.length - 1) {
     return this.currentNode;     // at goal node — stay (arrival logic takes over)
   }
-  return this._pursuitPath[idx + 1];
+  var nextNode = this._pursuitPath[idx + 1];
+  // Anti-oscillation: if A* wants to send us back through a node we just left,
+  // the path is bouncing (typically because the goal recomputed and the new
+  // shortest path routes through a recently-visited node). Treat as stuck.
+  this._recentNodes = this._recentNodes || [];
+  if (this._recentNodes.indexOf(nextNode) >= 0) {
+    this._pursuitGoal = this.currentNode;
+    return this.currentNode;
+  }
+  return nextNode;
 };
 
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
