@@ -166,12 +166,20 @@ body{display:flex;flex-direction:column;}
   0%,100%{opacity:.7;transform:scale(.9);}
   50%{opacity:1;transform:scale(1.05);}
 }
-/* Slate panel for the bad guy hover popup — readable against bright urban tiles, not pure black */
-.bg-popup .maplibregl-popup-content{background:#1e293b;color:#e2e8f0;
-  border:1px solid rgba(239,68,68,.4);border-radius:8px;padding:12px 14px;
-  box-shadow:0 10px 30px rgba(0,0,0,.55);}
-.bg-popup .maplibregl-popup-tip{border-top-color:#1e293b !important;
-  border-bottom-color:#1e293b !important;}
+/* Solid black panel for the bad guy hover popup — opaque background, bright text,
+   red incident border. No transparency. */
+.bg-popup .maplibregl-popup-content{
+  background:#000;
+  color:#f1f5f9;
+  border:1px solid rgba(239,68,68,.65);
+  border-radius:8px;
+  padding:12px 14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.7);
+}
+.bg-popup .maplibregl-popup-tip{
+  border-top-color:#000 !important;
+  border-bottom-color:#000 !important;
+}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
@@ -1065,7 +1073,7 @@ var BBOX = '42.338,-71.090,42.373,-71.042'; // ~1.2mi around Boston Common
 
 // Agent config
 var AGENT_CONFIG = {
-  drone:   { count:3,  fovAngle:360, fovDist:138, speed:25, color:'#0284c7', label:'Drone'   },
+  drone:   { count:3,  fovAngle:360, fovDist:110, speed:25, color:'#0284c7', label:'Drone'   },
   car:     { count:10, fovAngle:130, fovDist:68,  speed:20, color:'#16a34a', label:'Vehicle' },
   bike:    { count:10, fovAngle:130, fovDist:55,  speed:15, color:'#ea580c', label:'Bike'    },
   officer: { count:10, fovAngle:130, fovDist:45,  speed:5,  color:'#7c3aed', label:'Officer' }
@@ -2750,15 +2758,19 @@ function recordDetection(bg, detectorKey, detectorLabel, matchSummary) {
   if (!bg || !bg.active) return;
   var now = Date.now();
   bg._detectionLog = bg._detectionLog || {};
-  var lastFired = bg._detectionLog[detectorKey] || 0;
+  var prev = bg._detectionLog[detectorKey] || { lastSeen: 0 };
   // Always refresh the search position when a detector has visual — this is the
   // mechanism the thesis depends on. Coverage = fresh search position = faster catch.
   bg.searchLat = bg.lat;
   bg.searchLon = bg.lon;
   bg.lastDetectedAt = now;
-  // But only spam the alert feed once every 8 seconds per detector
-  if (now - lastFired < 8000) return;
-  bg._detectionLog[detectorKey] = now;
+  // Alert only on RISING EDGE — first acquisition after a 5+ second gap.
+  // Continuous detection (drone orbiting overhead) silently refreshes search
+  // position but doesn't spam the alert feed.
+  var risingEdge = (now - prev.lastSeen) > 5000;
+  prev.lastSeen = now;
+  bg._detectionLog[detectorKey] = prev;
+  if (!risingEdge) return;
   addAlert('warn', '<strong>' + detectorLabel + ' &mdash; visual on Incident #' + bg.id + '</strong> &mdash; ' + matchSummary + '.');
 }
 
