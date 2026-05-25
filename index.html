@@ -2784,38 +2784,123 @@ function _detMatch(bg) {
   return (color ? color : '') + ' ' + (bg.type === 'car' ? 'vehicle' : 'bike');
 }
 
+// ── A* SHORTEST PATH ON ROAD GRAPH ────────────────────────────────────────────
+// Used by pursuit so units take the shortest road route to the suspect instead
+// of greedy local-minimum hops. hwFilter restricts which highway types the
+// edges may use (so a police car routes via vehicle roads only, etc).
+function findRoadPath(startId, goalId, hwFilter) {
+  if (startId === goalId) return [startId];
+  var nodes = roadGraph.nodes;
+  if (!nodes[startId] || !nodes[goalId]) return null;
+  var goal = nodes[goalId];
+  var open = {}, openList = [startId];
+  var closed = {};
+  var gScore = {}; gScore[startId] = 0;
+  var fScore = {}; fScore[startId] = haversineM(nodes[startId].lat, nodes[startId].lon, goal.lat, goal.lon);
+  var parent = {};
+  open[startId] = true;
+  // Iteration cap so unreachable goals don't run away
+  var MAX_ITER = 6000, iter = 0;
+  while (openList.length && iter++ < MAX_ITER) {
+    // Pick node in open set with lowest fScore (linear scan — graphs are small)
+    var bestIdx = 0, bestF = fScore[openList[0]];
+    for (var i = 1; i < openList.length; i++) {
+      if (fScore[openList[i]] < bestF) { bestIdx = i; bestF = fScore[openList[i]]; }
+    }
+    var current = openList[bestIdx];
+    if (current === goalId) {
+      var path = [current];
+      while (parent[current] !== undefined) { current = parent[current]; path.unshift(current); }
+      return path;
+    }
+    openList[bestIdx] = openList[openList.length - 1];
+    openList.pop();
+    delete open[current];
+    closed[current] = true;
+    var n = nodes[current];
+    if (!n || !n.neighbors) continue;
+    for (var j = 0; j < n.neighbors.length; j++) {
+      var nb = n.neighbors[j];
+      if (closed[nb] || !nodes[nb]) continue;
+      // Filter by allowed highway type for this agent type
+      if (hwFilter && n.neighborHW && n.neighborHW[nb]) {
+        var info = n.neighborHW[nb];
+        var hw = info && info.hw ? info.hw : info;
+        if (!hwFilter.test(hw)) continue;
+      }
+      var edgeCost = haversineM(n.lat, n.lon, nodes[nb].lat, nodes[nb].lon);
+      var tentG = gScore[current] + edgeCost;
+      if (gScore[nb] === undefined || tentG < gScore[nb]) {
+        parent[nb] = current;
+        gScore[nb] = tentG;
+        fScore[nb] = tentG + haversineM(nodes[nb].lat, nodes[nb].lon, goal.lat, goal.lon);
+        if (!open[nb]) { open[nb] = true; openList.push(nb); }
+      }
+    }
+  }
+  return null;
+}
+
 // ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
+// Compute A* shortest path from agent's current node to the road-graph node
+// nearest the search position (last detected). Cache it; just follow the path
+// hop by hop. Recompute only when search position drifts or agent leaves the
+// cached path. No more greedy "guess the right turn at this intersection".
 Agent.prototype._pickPursuitTarget = function() {
   var tgt = targetFor(this);
   if (!tgt || !tgt.active) { this.status='patrol'; this.taskedTo=null; return this._pickTarget(); }
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
-  var self = this;
-  // Phase 4: route to the *search* position (last detected) — NOT the true position.
-  // Without sensor coverage this stays stale at the call location.
   var sp = searchPos(tgt);
-  var forward = n.neighbors.filter(function(nid) {
-    return nid != self.prevNode && roadGraph.nodes[nid];
-  });
-  var bestFwd = null, bestFwdD = Infinity;
-  forward.forEach(function(nid) {
-    var nb = roadGraph.nodes[nid];
-    var d = haversineM(nb.lat, nb.lon, sp.lat, sp.lon);
-    var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
-    var headingDelta = Math.abs(((brg - self.bearing) + 540) % 360 - 180);
-    var score = d + headingDelta * 0.15;
-    if (score < bestFwdD) { bestFwdD = score; bestFwd = nid; }
-  });
-  if (self.prevNode && roadGraph.nodes[self.prevNode]) {
-    var pNode = roadGraph.nodes[self.prevNode];
-    var pDist = haversineM(pNode.lat, pNode.lon, sp.lat, sp.lon);
-    if (!bestFwd || pDist < bestFwdD - 30) {
-      return self.prevNode;
+
+  // ── Goal: nearest road-graph node to searchPos, in THIS agent's allowed graph
+  // (cached — only recompute if searchPos has drifted by 20m+)
+  var spDrift = this._pursuitSp
+    ? haversineM(this._pursuitSp.lat, this._pursuitSp.lon, sp.lat, sp.lon)
+    : Infinity;
+  if (spDrift > 20) {
+    var pool = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
+    var gId = null, gD = Infinity;
+    for (var i = 0; i < pool.length; i++) {
+      var pn = roadGraph.nodes[pool[i]];
+      if (!pn) continue;
+      var d = haversineM(pn.lat, pn.lon, sp.lat, sp.lon);
+      if (d < gD) { gD = d; gId = pool[i]; }
     }
+    this._pursuitGoal = gId;
+    this._pursuitSp = { lat: sp.lat, lon: sp.lon };
+    this._pursuitPath = null;     // invalidate cached path
   }
-  if (bestFwd) return bestFwd;
-  var any = n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
-  return any.length ? any[0] : this.currentNode;
+
+  if (!this._pursuitGoal) return n.neighbors[0];
+
+  // ── Path: A* on agent's allowed-highway graph (recompute if missing or off-path)
+  var hwFilter = ALLOWED_HIGHWAYS[this.type];
+  if (!this._pursuitPath || this._pursuitPath.indexOf(this.currentNode) === -1) {
+    this._pursuitPath = findRoadPath(this.currentNode, this._pursuitGoal, hwFilter);
+  }
+
+  // No path (goal unreachable from here in this agent's graph) — fall back
+  // to greedy single-hop so the unit at least moves toward the suspect
+  if (!this._pursuitPath || !this._pursuitPath.length) {
+    var any = n.neighbors.filter(function(nid){ return roadGraph.nodes[nid]; });
+    if (!any.length) return this.currentNode;
+    var goalNode = roadGraph.nodes[this._pursuitGoal];
+    var best = any[0], bestD = Infinity;
+    any.forEach(function(nid) {
+      var nb = roadGraph.nodes[nid];
+      var d = haversineM(nb.lat, nb.lon, goalNode.lat, goalNode.lon);
+      if (d < bestD) { bestD = d; best = nid; }
+    });
+    return best;
+  }
+
+  // ── Follow the path: next node after current
+  var idx = this._pursuitPath.indexOf(this.currentNode);
+  if (idx === -1 || idx >= this._pursuitPath.length - 1) {
+    return this.currentNode;     // at goal node — stay (arrival logic takes over)
+  }
+  return this._pursuitPath[idx + 1];
 };
 
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
