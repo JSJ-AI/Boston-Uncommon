@@ -42,12 +42,40 @@ body{display:flex;flex-direction:column;}
 .logo{font-size:15px;font-weight:700;letter-spacing:.08em;color:var(--acc);text-transform:uppercase;}
 .logo span{color:var(--mut);font-weight:400;}
 .sep{flex:1;}
-.tlabel{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
-#timer{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;
-  color:var(--warn);min-width:72px;text-align:right;}
+.tlabel{font-size:13px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.08em;font-weight:600;}
+#timer{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;
+  color:var(--warn);min-width:92px;text-align:right;}
 #timer.hot{color:var(--bad);}
-.pill{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
-  letter-spacing:.05em;text-transform:uppercase;}
+.pill{padding:5px 14px;border-radius:20px;font-size:13px;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;flex-shrink:0;}
+#avg-block{display:flex;flex-direction:column;align-items:flex-start;gap:1px;margin-left:6px;padding-left:14px;border-left:1px solid var(--brd);}
+#avg-block .tlabel{font-size:10px;color:#94a3b8;font-weight:500;letter-spacing:.06em;}
+#avg-timer{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:var(--ok);line-height:1;}
+#avg-timer.empty{color:var(--mut);}
+/* Title bar above topbar */
+#titlebar{padding:10px 18px;background:linear-gradient(180deg,rgba(15,23,42,1) 0%,rgba(15,23,42,.92) 100%);
+  border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:18px;}
+.title-text{font-size:14px;font-weight:700;color:#7dd3fc;letter-spacing:.08em;text-transform:uppercase;line-height:1.2;}
+.title-text .ttsep{margin:0 8px;color:var(--mut);font-weight:400;}
+.title-text .ttsim{color:#f59e0b;}
+.title-info{background:rgba(125,211,252,.1);color:#7dd3fc;border:1px solid rgba(125,211,252,.35);
+  padding:5px 14px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;
+  letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;font-family:inherit;}
+.title-info:hover{background:rgba(125,211,252,.2);border-color:rgba(125,211,252,.6);}
+/* About modal */
+#welcome-modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;
+  align-items:center;justify-content:center;z-index:1000;}
+#welcome-modal.show{display:flex;}
+.welcome-modal-content{background:var(--sur);border:1px solid var(--brd);border-radius:10px;
+  padding:28px 32px 24px;max-width:640px;width:90%;max-height:85vh;overflow-y:auto;position:relative;
+  color:var(--txt);box-shadow:0 30px 80px rgba(0,0,0,.7);}
+.welcome-modal-close{position:absolute;top:10px;right:14px;background:none;border:none;
+  color:var(--mut);font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;font-family:inherit;}
+.welcome-modal-close:hover{color:var(--txt);}
+.welcome-modal-content h2{color:#7dd3fc;font-size:16px;margin:0 0 8px 0;letter-spacing:.08em;text-transform:uppercase;font-weight:700;}
+.welcome-modal-content .wm-sub{color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:20px;}
+.welcome-modal-content p{font-size:13px;line-height:1.6;margin:0 0 14px 0;color:var(--txt);}
+.welcome-modal-content .welcome-emphasis{color:#f59e0b;font-weight:600;}
 .p-standby{background:rgba(100,116,139,.2);color:var(--mut);border:1px solid var(--brd);}
 .p-active{background:rgba(239,68,68,.15);color:var(--bad);border:1px solid rgba(239,68,68,.4);}
 .p-scan{background:rgba(0,212,255,.12);color:var(--acc);border:1px solid rgba(0,212,255,.35);animation:blink 2s infinite;}
@@ -160,7 +188,7 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'Inter',sans-serif;
   overflow:hidden;color:#fff;}
 .spop.cam-traf{border-color:#eab308;}
-.spop.cam-surv{border-color:#2563eb;}
+.spop.cam-surv{border-color:#93c5fd;}
 .spop.ag-drone{border-color:#0284c7;}
 .spop.ag-car{border-color:#16a34a;}
 .spop.ag-bike{border-color:#ea580c;}
@@ -297,11 +325,33 @@ body{display:flex;flex-direction:column;}
 </head>
 <body>
 
+<div id="titlebar">
+  <div class="title-text">Security Operations Center<span class="ttsep">·</span>AI Computer Vision<span class="ttsep">·</span><span class="ttsim">Agentic 911 Deployment Simulation</span></div>
+  <button class="title-info" onclick="showWelcome()">About this demo</button>
+</div>
+
+<div id="welcome-modal" onclick="if(event.target.id==='welcome-modal')hideWelcome();">
+  <div class="welcome-modal-content">
+    <button class="welcome-modal-close" onclick="hideWelcome()">&times;</button>
+    <h2>Welcome to Boston UnCommon</h2>
+    <div class="wm-sub">Agentic AI &middot; Computer Vision &middot; 911 Deployment Simulation</div>
+    <p>An <strong>agentic AI computer vision actionable intelligence model</strong> that uses computer vision and object detection from 911-call audio attributes &mdash; speech-to-text that spawns object search or pursuit.</p>
+    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, surveillance cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
+    <p class="welcome-emphasis">Press &ldquo;Answer 911 Call&rdquo; to put the Security Operations Center into action.</p>
+    <p>An event object or person will be placed on the map based on call information, and then all the cameras&rsquo; fields of view can be used to locate and vector resources to resolve the 911 call tasking.</p>
+    <p>This is a thought-stimulation exercise to imagine what is possible when computer vision telemetry data can be coordinated and tasking to law enforcement help is automatically deployed.</p>
+  </div>
+</div>
+
 <div id="topbar">
-  <div class="logo">Boston <span style="color:#ff2d2d;font-weight:700;text-shadow:0 0 6px rgba(255,60,60,0.45);">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
+  <div class="logo">Boston <span style="color:#ff2d2d;font-weight:700;text-shadow:0 0 6px rgba(255,60,60,0.45);">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.2</span></div>
   <div class="sep"></div>
   <span class="tlabel">Response&nbsp;Time&nbsp;&nbsp;</span>
   <div id="timer">00:00</div>
+  <div id="avg-block">
+    <span class="tlabel">Avg Response</span>
+    <div id="avg-timer" class="empty">--:--</div>
+  </div>
   <div id="syspill" class="pill p-standby">Standby</div>
 </div>
 
@@ -332,7 +382,7 @@ body{display:flex;flex-direction:column;}
         <div class="abadge" data-toggle="bikes" onclick="toggleAssetType('bikes')"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge" data-toggle="officers" onclick="toggleAssetType('officers')"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge" data-toggle="traffic-cams" onclick="toggleAssetType('traffic-cams')"><span style="font-size:16px;color:#eab308;">&#128678;</span><div><div class="abn">Traffic Cams</div><div class="abc" id="c-cam-traf">0/0</div></div></div>
-        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#2563eb;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
+        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#93c5fd;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
         <div class="abadge" data-toggle="mics" onclick="toggleAssetType('mics')"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
     </div>
@@ -375,6 +425,11 @@ var map, timerSec=0, timerInt=null, scenarioOn=false, deployMode=false, pendingT
 var badGuys = [];           // array of active incidents (BadGuy instances with incident metadata)
 var incidentSeq = 0;        // monotonic id counter
 var taskingsRenderInt = null; // 1s interval to refresh tasking card timers
+var responseTimings = [];   // seconds, one per completed-arrival incident — for the running average
+
+// Welcome modal handlers
+function showWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.add('show');}
+function hideWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.remove('show');}
 
 // ── MAP INIT inside window.load — guarantees DOM + external CSS fully resolved ──
 window.addEventListener('load', function() {
@@ -682,17 +737,45 @@ function dispatchToIncident(bg) {
   }
 }
 
-// Return a tasked agent to patrol when its incident closes
+// Return a tasked agent to patrol when its incident closes.
+// If another active incident lacks this unit type, the unit is reassigned
+// to the closest one instead of going back to patrol.
 function returnFromTasking(agent) {
   if (!agent) return;
+  // Clear current tasking state
   agent.taskedTo = null;
-  agent.status = 'patrol';
   agent._hasVisual = false;
+  // Look for another active incident that needs this unit type
+  var bestBg = null, bestD = Infinity;
+  badGuys.forEach(function(bg) {
+    if (!bg || !bg.active) return;
+    if (bg.incidentStatus === 'clearing') return; // already containing
+    if (bg.taskedUnits && bg.taskedUnits[agent.type]) return; // already has one
+    var d = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
+    if (d < bestD) { bestD = d; bestBg = bg; }
+  });
+  if (bestBg) {
+    // Reassign instead of returning to patrol
+    agent.taskedTo = bestBg.id;
+    agent.status   = 'pursuing';
+    agent.pauseUntil = 0;
+    if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
+    bestBg.taskedUnits[agent.type] = agent;
+    // Keep the tasked glow
+    if (agent.marker && agent.marker._element) {
+      agent.marker._element.classList.add('agent-tasked-glow');
+    }
+    addAlert('warn', agent.cfg.label + ' ' + agent.id + ' reassigned to Incident #' + bestBg.id + '.');
+    updateAssetCounts();
+    renderTaskings();
+    return;
+  }
+  // Otherwise: actually return to patrol
+  agent.status = 'patrol';
   if (agent.marker && agent.marker._element) {
     agent.marker._element.classList.remove('agent-tasked-glow');
   }
-  agent.targetNode = agent._pickTarget();
-  agent.pauseUntil = 0;
+  if (agent.type !== 'drone') agent.targetNode = agent._pickTarget();
 }
 
 // Recompute badges. New format: "Deployed / Available".
@@ -734,38 +817,62 @@ function updateAssetCounts() {
 }
 
 // Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
+// Option B+D: car arrival counts within 30m (no need to drive across grass);
+// officer arrival within 12m can also trigger the 30s clear when no car-road
+// is close enough to the suspect.
 function checkIncidentArrival(bg) {
   if (!bg || !bg.active) return;
   if (bg.incidentStatus === 'clearing') return;
-  // Find tasked units within capture range (8m)
-  var onScene = [];
+  // Per-unit distances from incident
+  var dists = {};
   Object.keys(bg.taskedUnits).forEach(function(type) {
     var a = bg.taskedUnits[type];
     if (a && a.status === 'pursuing') {
-      var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
-      if (d < 8) onScene.push(a);
+      dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
     }
   });
-  // First non-drone arrival: stop motion, record response time
-  var nonDrone = onScene.filter(function(a) { return a.type !== 'drone'; });
-  if (nonDrone.length && !bg.timerEnd) {
+  // First arrival (timer freeze) = any non-drone within 15m
+  var firstArrival = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 15 && !firstArrival) firstArrival = dists[t].agent;
+  });
+  if (firstArrival && !bg.timerEnd) {
     bg.timerEnd = Date.now();
     bg.maxSpeed = 0;
     bg.speed = 0;
     bg.incidentStatus = 'arrived';
     var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
-    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> — ' +
-      nonDrone[0].cfg.label + ' ' + nonDrone[0].id + ' on scene. Response: ' + respSec + 's.');
+    responseTimings.push(respSec);
+    updateAvgResponseDisplay();
+    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
+      firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
   }
-  // Car arrival: kick off 30s clearance
-  var carOnScene = onScene.filter(function(a) { return a.type === 'car'; });
-  if (carOnScene.length && !bg.arrivedAt) {
+  // Clear trigger: car within 30m OR officer within 12m
+  var carClose    = dists.car     && dists.car.d     < 30;
+  var officerClose= dists.officer && dists.officer.d < 12;
+  if ((carClose || officerClose) && !bg.arrivedAt) {
     bg.arrivedAt = Date.now();
     bg.clearAt = bg.arrivedAt + 30000;
     bg.incidentStatus = 'clearing';
+    var who = carClose ? dists.car.agent : dists.officer.agent;
     addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
-      carOnScene[0].cfg.label + ' ' + carOnScene[0].id + '. Clearing in 30s...');
+      who.cfg.label + ' ' + who.id + '. Clearing in 30s...');
   }
+}
+
+function updateAvgResponseDisplay() {
+  var el = document.getElementById('avg-timer');
+  if (!el) return;
+  if (!responseTimings.length) {
+    el.textContent = '--:--';
+    el.classList.add('empty');
+    return;
+  }
+  var sum = responseTimings.reduce(function(a,b){return a+b;}, 0);
+  var avg = Math.round(sum / responseTimings.length);
+  var mm = Math.floor(avg/60), ss = avg%60;
+  el.textContent = (mm<10?'0':'') + mm + ':' + (ss<10?'0':'') + ss;
+  el.classList.remove('empty');
 }
 
 function checkIncidentClear(bg) {
@@ -874,6 +981,9 @@ function clearAllIncidents() {
   badGuys = [];
   badGuy = null;
   if (taskingsRenderInt) { clearInterval(taskingsRenderInt); taskingsRenderInt = null; }
+  // Reset rolling average
+  responseTimings = [];
+  updateAvgResponseDisplay();
   renderTaskings();
 }
 
@@ -909,7 +1019,7 @@ var AGENT_CONFIG = {
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
 // Public surveillance cameras (OSM man_made=surveillance, public-zone only)
 // Color is blue (distinct from drone sky-blue) so they read as a separate sensor class
-var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#2563eb' };
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#93c5fd' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 // Unified visibility map — each badge in the asset grid toggles one of these.
 // Single source of truth for all on/off layer controls.
