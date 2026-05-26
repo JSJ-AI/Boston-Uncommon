@@ -701,7 +701,7 @@ function placeBadGuy(lat,lng,type){
   bg.timerStart = Date.now();
   bg.timerEnd = null;       // set when first non-drone tasked unit arrives
   bg.arrivedAt = null;      // set when car arrives (starts 30s clear)
-  bg.clearAt = null;        // set when arrivedAt + 30s
+  bg.clearAt = null;        // set when arrivedAt + 15s
   bg.incidentStatus = 'active';
   bg.maxSpeed = MODE_MAX_SPEED[type] || 30;
   // Phase 4: CV search position — what units *believe* the suspect's location is.
@@ -951,14 +951,16 @@ function checkIncidentArrival(bg) {
   });
   if ((carClose || bikeClose || officerClose || stuckClose) && !bg.arrivedAt) {
     bg.arrivedAt = Date.now();
-    bg.clearAt = bg.arrivedAt + 30000;
+    // Clearing window: 15 seconds from physical arrival to incident close.
+    // Was 30s previously — tightened to reduce on-scene wait.
+    bg.clearAt = bg.arrivedAt + 15000;
     bg.incidentStatus = 'clearing';
     var who = carClose ? dists.car.agent
             : officerClose ? dists.officer.agent
             : bikeClose ? dists.bike.agent
             : stuckAgent;
     addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
-      who.cfg.label + ' ' + who.id + '. Clearing in 30s...');
+      who.cfg.label + ' ' + who.id + '. Clearing in 15s...');
   }
 }
 
@@ -1111,13 +1113,15 @@ var BBOX = '42.338,-71.090,42.373,-71.042'; // ~1.2mi around Boston Common
 
 // Agent config
 var AGENT_CONFIG = {
-  drone:   { count:3,  fovAngle:360, fovDist:110, speed:25, color:'#0284c7', label:'Drone'   },
-  car:     { count:10, fovAngle:130, fovDist:68,  speed:20, color:'#16a34a', label:'Vehicle' },
-  bike:    { count:10, fovAngle:130, fovDist:55,  speed:15, color:'#ea580c', label:'Bike'    },
-  officer: { count:10, fovAngle:130, fovDist:45,  speed:5,  color:'#7c3aed', label:'Officer' }
+  drone:   { count:3,  fovAngle:360, fovDist:110, speed:25, color:'#0284c7', label:'Drone',   pursuitMult:2.2 },
+  car:     { count:10, fovAngle:130, fovDist:102, speed:20, color:'#16a34a', label:'Vehicle', pursuitMult:2.86 },
+  bike:    { count:10, fovAngle:130, fovDist:83,  speed:15, color:'#ea580c', label:'Bike',    pursuitMult:2.2 },
+  officer: { count:10, fovAngle:130, fovDist:68,  speed:5,  color:'#7c3aed', label:'Officer', pursuitMult:2.2 }
 };
-// fovDist in metres (200ft=61m, 100ft=30m, 75ft=23m)
-// speed in km/h approx (drone 44=27mph, car 37=23mph, bike 18=11mph, officer 5=3mph)
+// fovDist in metres. Ground-unit values bumped +50% from baseline 68/55/45 for
+// wider detection coverage. pursuitMult is the patrol→pursuit speed multiplier
+// per type; car is +30% above the baseline 2.2 (= 2.86) so cruisers actually
+// close on suspects in demo-scale time.
 
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
@@ -1926,9 +1930,12 @@ function tick() {
       if (el) el.style.opacity = (divergence < 20) ? '0.25' : '1';
     }
   });
-  // Oscillation suppression + brute-force unstick — every 4 ticks (2s).
-  // See the OSCILLATION SUPPRESSION block below for the full mechanism.
-  if (tickCount % 4 === 0) checkStuckAgents();
+  // Oscillation suppression + brute-force unstick + tasking persistence —
+  // every 4 ticks (2s). See OSCILLATION SUPPRESSION block below.
+  if (tickCount % 4 === 0) {
+    checkStuckAgents();
+    ensureFullTasking();
+  }
   tickCount++;
   updateFOV();
   updateCameraFOV();
@@ -1943,10 +1950,9 @@ function moveAgent(agent) {
     agent.updateMarker();
     return;
   }
-  // Pursuit mode: 50% speed boost
-  // Pursuit speed multiplier — units in pursuit go significantly faster than
-  // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
-  var speedMult = (agent.status === 'pursuing') ? 2.2 : 1.0;
+  // Pursuit mode: per-type speed multiplier (cars currently at 2.86x = +30%
+  // above the previous flat 2.2x, others unchanged). Read from AGENT_CONFIG.
+  var speedMult = (agent.status === 'pursuing') ? (agent.cfg.pursuitMult || 2.2) : 1.0;
   var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
@@ -2082,6 +2088,94 @@ function moveDrone(agent, dist) {
   }
   agent.lat = newLat;
   agent.lon = newLon;
+}
+
+// ── PERSISTENCE: KEEP EVERY ACTIVE INCIDENT FULLY COVERED ────────────────────
+// Every active bg should have car + bike + officer tasked. Slots can go
+// empty when a unit gets untasked (oscillation→backfill, with no pool to
+// backfill from) or any other transient gap. This sweep runs every 2 seconds
+// and silently fills any missing slot with the closest available unit of
+// that type. Drone is excluded (per the FOV handoff design — drones detect
+// but never capture; they don't need a persistence slot).
+function ensureFullTasking() {
+  if (!scenarioOn) return;
+  badGuys.forEach(function(bg) {
+    if (!bg || !bg.active) return;
+    if (bg.incidentStatus === 'clearing') return;   // already wrapping up
+    if (!bg.taskedUnits) bg.taskedUnits = {};
+    ['car','bike','officer'].forEach(function(type) {
+      var current = bg.taskedUnits[type];
+      // Slot is covered if there's a tasked agent of the right type still
+      // bound to this bg and not captured.
+      if (current && current.status !== 'captured' &&
+          current.taskedTo === bg.id && current.type === type) {
+        return;
+      }
+      // Slot is empty — find the closest available agent of this type
+      var pool = agents.filter(function(a) {
+        return a.type === type && a.status !== 'captured' && !a.taskedTo;
+      });
+      if (!pool.length) return;
+      var best = pool[0], bestD = Infinity;
+      pool.forEach(function(a) {
+        var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+        if (d < bestD) { bestD = d; best = a; }
+      });
+      best.taskedTo     = bg.id;
+      best.status       = 'pursuing';
+      best.pauseUntil   = 0;
+      best._lastBearing = null;
+      best._flipCount   = 0;
+      best._commitUntil = 0;
+      best._jumpCount   = 0;
+      if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
+      if (best.marker && best.marker._element) {
+        best.marker._element.classList.add('agent-tasked-glow');
+      }
+      bg.taskedUnits[type] = best;
+    });
+  });
+  if (typeof renderTaskings === 'function') renderTaskings();
+}
+
+// ── FOV HANDOFF: OPPORTUNISTIC TARGET SWITCH ─────────────────────────────────
+// If a tasked unit doesn't currently see its assigned suspect but DOES see a
+// different active suspect that lacks coverage of this unit's type, switch
+// the unit to the visible target. Old slot gets refilled by ensureFullTasking
+// on the next sweep (≤2 seconds). Realistic ("don't ignore the criminal in
+// front of you") and helps when an initial closest-unit dispatch was a bad
+// match. Silent — no operator alert.
+function tryFovHandoff(agent) {
+  if (agent.status !== 'pursuing' || !agent.taskedTo) return;
+  if (!agent._inFovOf) return;
+  // If we already see our own target, no handoff needed
+  if (agent._inFovOf[agent.taskedTo]) return;
+  for (var i = 0; i < badGuys.length; i++) {
+    var bg = badGuys[i];
+    if (!bg || !bg.active || bg.id === agent.taskedTo) continue;
+    if (!agent._inFovOf[bg.id]) continue;
+    // Only steal if the other bg actually lacks this unit type
+    if (bg.taskedUnits && bg.taskedUnits[bg.id] === undefined) bg.taskedUnits = bg.taskedUnits || {};
+    if (bg.taskedUnits[agent.type]) continue;
+    // Switch
+    var oldBg = targetFor(agent);
+    if (oldBg && oldBg.taskedUnits) {
+      Object.keys(oldBg.taskedUnits).forEach(function(t) {
+        if (oldBg.taskedUnits[t] === agent) delete oldBg.taskedUnits[t];
+      });
+    }
+    agent.taskedTo     = bg.id;
+    agent._lastBearing = null;
+    agent._flipCount   = 0;
+    agent._commitUntil = 0;
+    agent._jumpCount   = 0;
+    agent._pursuitPath = null;
+    agent._pursuitGoal = null;
+    agent._pursuitSp   = null;
+    bg.taskedUnits[agent.type] = agent;
+    if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
+    break;   // at most one handoff per tick
+  }
 }
 
 // ── OSCILLATION SUPPRESSION + STUCK FALLBACK ─────────────────────────────────
@@ -3258,6 +3352,9 @@ function checkDetection() {
           'match: ' + _detMatch(bg));
       }
     });
+    // Opportunistic target switch: if this unit can see a different unassigned
+    // suspect but not its own assignment, hand off. Silent.
+    tryFovHandoff(a);
   });
 }
 
