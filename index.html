@@ -3854,7 +3854,7 @@ var INCIDENT_TYPES = [
   { id:'hit_run',     label:'Hit and run',                  objType:'car',    weight:2,
     template:"Hello, yes, I need to report a hit and run. A {color} sedan just sideswiped a vehicle near {address}. They're heading {direction}. Please send someone." },
   { id:'carjack',     label:'Carjacking in progress',       objType:'car',    weight:1,
-    template:"Nine-one-one, there's a carjacking happening near {address}. The suspect took off in a {color} car going {direction}." },
+    template:"There's a carjacking happening at {address} — guy just yanked the driver out of a {color} car and took off going {direction}. Send someone right now." },
   { id:'sus_vehicle', label:'Suspicious vehicle',           objType:'car',    weight:2, motion:'still',
     template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
   { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
@@ -3865,10 +3865,14 @@ var INCIDENT_TYPES = [
     template:"There's a group of maybe three kids causing a disturbance near {address}. Wearing mostly {color}. They're being loud and harassing people." },
   { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
     template:"There's a person in a {color} shirt down on the ground near {address}. They're not moving much. I think they need help." },
-  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
+  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:15, subkind:'gunshot', motion:'still',
+    // TEMP TEST: weight bumped 1 → 15 to make shots_fired ~50% of rolls so the
+    // acoustic-triangulation flow can be verified end-to-end. Revert to 1 for
+    // production distribution. With weight 15 + other 15 weight points the
+    // total is 30 and shots_fired = 15/30 = 50.0%.
     template:"I just heard three or four gunshots from somewhere near {address}. I see someone in a {color} jacket but they're not moving — I think they're hurt." },
   { id:'lpr_plate',   label:'Plate sighting (LPR-eligible)', objType:'car',    weight:2, subkind:'lpr',
-    template:"Hi 911, I just witnessed a car driving really erratic — I caught the plate, it was {plate}, a {color} sedan heading {direction} near {address}." }
+    template:"Yeah hi, I want to report a car driving really aggressive — I got the plate, it's {plate}, a {color} sedan heading {direction} near {address}." }
 ];
 
 var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
@@ -3998,6 +4002,22 @@ function _ic_pickIncident() {
   return _ic_wpick(weighted);
 }
 
+// Web Speech API reads "911" as "nine hundred eleven" and license plates
+// like "ABC1234" as "A B C, twelve thirty-four" — both unnatural. Preprocess
+// the text passed to the synthesizer only (display stays as-is):
+//  - "911"       → "9-1-1"     (hyphens force digit-by-digit)
+//  - "ABC1234"   → "A B C 1 2 3 4"  (spaces force per-character)
+// SSML would be the "right" way but Chrome's speech engine ignores SSML.
+function _ic_speechPrep(text) {
+  if (!text) return text;
+  var s = String(text);
+  s = s.replace(/\b911\b/g, '9-1-1');
+  s = s.replace(/\b([A-Z]{3})([0-9]{4})\b/g, function(m, letters, digits) {
+    return letters.split('').join(' ') + ' ' + digits.split('').join(' ');
+  });
+  return s;
+}
+
 function _ic_speak(text) {
   if (typeof window.speechSynthesis === 'undefined') return;
   try {
@@ -4005,7 +4025,7 @@ function _ic_speak(text) {
     var voices = window.speechSynthesis.getVoices().filter(function(v) {
       return v.lang && v.lang.toLowerCase().indexOf('en') === 0;
     });
-    var utt = new SpeechSynthesisUtterance(text);
+    var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
     if (voices.length > 0) {
       utt.voice = voices[Math.floor(Math.random()*voices.length)];
     }
