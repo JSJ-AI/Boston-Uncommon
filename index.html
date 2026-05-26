@@ -4148,6 +4148,81 @@ function _ic_speak(text) {
   } catch(e) { /* swallow */ }
 }
 
+// ── System dispatcher voice ────────────────────────────────────────────────
+// Used by acoustic-dispatch announcements (and any future system-level voice).
+// Distinct from _ic_speak (random per-call voice for synthetic 911 witnesses).
+// Picks a SINGLE smooth English male voice once on page load and reuses it for
+// every system message. Voice loading is async in browsers, so we resolve on
+// the 'voiceschanged' event and also lazily on first call.
+var _ic_systemVoice = null;
+var _ic_systemVoicePreferences = [
+  // Edge neural voices — best quality, very natural
+  'Microsoft Davis Online', 'Microsoft Guy Online', 'Microsoft Tony Online',
+  'Microsoft Aaron Online',
+  // Chrome and Safari/macOS smooth male voices
+  'Google UK English Male', 'Google US English',
+  'Daniel',          // macOS UK English male (very smooth)
+  'Alex',            // macOS US English male
+  // Older but reliable Windows voices
+  'Microsoft George', 'Microsoft Mark', 'Microsoft David'
+];
+
+function _ic_pickSystemVoice() {
+  if (typeof window.speechSynthesis === 'undefined') return null;
+  var voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  // Try preferred names in order
+  for (var i = 0; i < _ic_systemVoicePreferences.length; i++) {
+    var pref = _ic_systemVoicePreferences[i].toLowerCase();
+    for (var j = 0; j < voices.length; j++) {
+      if (voices[j].name && voices[j].name.toLowerCase().indexOf(pref) >= 0) {
+        return voices[j];
+      }
+    }
+  }
+  // Fallback: any English voice with "male" in name (excluding "female")
+  for (var k = 0; k < voices.length; k++) {
+    var v = voices[k], n = (v.name || '').toLowerCase();
+    if (v.lang && v.lang.toLowerCase().indexOf('en') === 0
+        && n.indexOf('male') >= 0 && n.indexOf('female') < 0) {
+      return v;
+    }
+  }
+  // Last resort: any English voice (let the OS pick)
+  for (var l = 0; l < voices.length; l++) {
+    if (voices[l].lang && voices[l].lang.toLowerCase().indexOf('en') === 0) {
+      return voices[l];
+    }
+  }
+  return null;
+}
+
+// Initialize system voice when browser finishes loading voice list
+if (typeof window.speechSynthesis !== 'undefined') {
+  // Try immediately (voices may already be loaded)
+  _ic_systemVoice = _ic_pickSystemVoice();
+  // Re-resolve when voices finish loading async
+  window.speechSynthesis.onvoiceschanged = function() {
+    _ic_systemVoice = _ic_pickSystemVoice();
+  };
+}
+
+function _ic_systemSpeak(text) {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  try {
+    // Lazy-resolve voice if not yet cached (page may have loaded before voices
+    // were available; this catches the first user gesture after voices loaded).
+    if (!_ic_systemVoice) _ic_systemVoice = _ic_pickSystemVoice();
+    window.speechSynthesis.cancel();
+    var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
+    if (_ic_systemVoice) utt.voice = _ic_systemVoice;
+    utt.rate  = 1.0;   // steady dispatcher cadence — no random variation
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    window.speechSynthesis.speak(utt);
+  } catch(e) { /* swallow */ }
+}
+
 function _ic_display(incident, text, tokens) {
   var disp  = document.getElementById('call-display');
   var label = document.getElementById('call-label');
@@ -4217,35 +4292,27 @@ function answer911Call() {
       addAlert('warn', '🔇 Acoustic event dropped — no spot in the operational area has both a street address and ≥3 mics within ' + TRI_QUALITY_RADIUS + 'm. Check mic placement / coverage.');
       return;
     }
-    // 911 caller flow for shots_fired: a witness phones in describing what
-    // they HEARD (no visual — we're in the acoustic-only intel path). The
-    // caller's words play via TTS and show in the call-display panel, then
-    // mic-mesh triangulation fires in parallel and locates the origin.
-    var originAddr  = _ic_addressAt(origin.lat, origin.lng) || 'an unresolved location';
-    var callerLines = [
-      'I just heard gunshots — four or five — near ' + originAddr + '! Please send someone right away!',
-      'There\u2019s been shots fired near ' + originAddr + '! Multiple loud bangs, please hurry!',
-      'Hello, 911? I heard gunshots near ' + originAddr + ' just now. Maybe three or four rounds. I didn\u2019t see anyone.'
-    ];
-    var callerText = callerLines[Math.floor(Math.random() * callerLines.length)];
+    // Acoustic dispatch flow for shots_fired: there's no human witness — the
+    // mic mesh detected the event. A SYSTEM dispatcher voice announces the
+    // detection, then triangulation runs and a suspect spawns at the located
+    // origin (motion='moving' — they're fleeing) for units to discover and
+    // capture. Distinct from other 911 incidents which use random caller voices.
+    var originAddr     = _ic_addressAt(origin.lat, origin.lng) || 'an unresolved location';
+    var dispatcherText = 'Shots detected. Deploying drone and response team.';
 
-    // Update the call-display panel with the caller's words (mirrors the
-    // normal 911 flow's _ic_display call). Stays visible until spawnAcousticSuspect
-    // replaces it with the post-triangulation "no witness description" summary.
     var disp  = document.getElementById('call-display');
     var label = document.getElementById('call-label');
     var body  = document.getElementById('call-body');
     var meta  = document.getElementById('call-meta');
     if (disp && label && body) {
       disp.style.display = 'block';
-      label.textContent = 'Shots fired (911 call)';
-      body.textContent  = callerText;
-      if (meta) meta.textContent = 'Acoustic triangulation in progress\u2026';
+      label.textContent = 'Shots fired (acoustic)';
+      body.textContent  = dispatcherText;
+      if (meta) meta.textContent = 'Triangulating near ' + originAddr + '\u2026';
     }
 
-    addAlert('warn', '\ud83d\udcde <strong>911 call</strong>: ' + callerText);
-    addAlert('warn', '\ud83d\udd0a <strong>Acoustic event detected</strong> \u2014 triangulating across mic mesh...');
-    _ic_speak(callerText);
+    addAlert('bad', '\ud83d\udd0a <strong>SYSTEM</strong>: ' + dispatcherText);
+    _ic_systemSpeak(dispatcherText);
     runShotsFiredTriangulation(origin.lat, origin.lng, {
       onComplete: function(lat, lon) { spawnAcousticSuspect(lat, lon); }
     });
