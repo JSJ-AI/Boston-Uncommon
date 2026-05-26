@@ -1369,7 +1369,31 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
 }
 
+// Try a static JSON file under ./cache/ first — bulletproof local fallback.
+// If the deployer has uploaded cache/{name}.json alongside index.html (e.g.,
+// in the GitHub repo), this returns the cached data instantly without ever
+// touching Overpass. Returns null on any failure (file not deployed, network
+// down, parse error), and the caller falls through to the live Overpass path.
+async function _tryLocalStatic(filename) {
+  try {
+    var r = await fetch('./cache/' + filename, { cache: 'no-cache' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch(e) {
+    return null;
+  }
+}
+
 async function fetchOverpass(mirrorIdx) {
+  // First call only: try the static local cache. Recursive mirror calls skip
+  // this since they're already deeper in the chain.
+  if (mirrorIdx === undefined) {
+    var local = await _tryLocalStatic('roads.json');
+    if (local) {
+      console.info('Roads loaded from static cache (./cache/roads.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
   if (mirrorIdx >= OVERPASS_MIRRORS.length) {
     // All live mirrors failed — try the localStorage cache before giving up
@@ -1401,6 +1425,13 @@ async function fetchOverpass(mirrorIdx) {
 
 // Fetch real traffic-signal intersections from OSM (one node per signalised intersection)
 async function fetchTrafficSignals(mirrorIdx) {
+  if (mirrorIdx === undefined) {
+    var local = await _tryLocalStatic('signals.json');
+    if (local) {
+      console.info('Signals loaded from static cache (./cache/signals.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
   if (mirrorIdx >= OVERPASS_MIRRORS.length) {
     var cached = _osmCacheGet('signals');
@@ -1431,6 +1462,13 @@ async function fetchTrafficSignals(mirrorIdx) {
 
 // Fetch OSM-mapped public surveillance cameras (community-tagged CCTV in public zones)
 async function fetchSurveillanceCameras(mirrorIdx) {
+  if (mirrorIdx === undefined) {
+    var local = await _tryLocalStatic('surveillance.json');
+    if (local) {
+      console.info('Surveillance loaded from static cache (./cache/surveillance.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
   if (mirrorIdx >= OVERPASS_MIRRORS.length) {
     var cached = _osmCacheGet('surveillance');
