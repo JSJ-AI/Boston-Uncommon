@@ -42,12 +42,45 @@ body{display:flex;flex-direction:column;}
 .logo{font-size:15px;font-weight:700;letter-spacing:.08em;color:var(--acc);text-transform:uppercase;}
 .logo span{color:var(--mut);font-weight:400;}
 .sep{flex:1;}
-.tlabel{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;}
-#timer{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;
-  color:var(--warn);min-width:72px;text-align:right;}
+.tlabel{font-size:13px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.08em;font-weight:600;}
+#timer{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;
+  color:var(--warn);min-width:92px;text-align:right;}
 #timer.hot{color:var(--bad);}
-.pill{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
-  letter-spacing:.05em;text-transform:uppercase;}
+.pill{padding:5px 14px;border-radius:20px;font-size:13px;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;flex-shrink:0;}
+#avg-block{display:flex;flex-direction:column;align-items:flex-start;gap:1px;margin-left:6px;padding-left:14px;border-left:1px solid var(--brd);}
+#avg-block .tlabel{font-size:10px;color:#94a3b8;font-weight:500;letter-spacing:.06em;}
+#avg-timer{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:var(--ok);line-height:1;}
+#avg-timer.empty{color:var(--mut);}
+/* Inline title text inside the topbar, alongside the Boston UnCommon logo */
+.title-text{font-size:13px;font-weight:700;color:#7dd3fc;letter-spacing:.06em;text-transform:uppercase;
+  line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.title-text .ttsep{margin:0 7px;color:var(--mut);font-weight:400;}
+.title-text .ttsim{color:#f59e0b;}
+.topbar-spacer{flex:1;min-width:8px;}
+/* About button — sits at the right edge of the topbar */
+.title-info{background:rgba(125,211,252,.1);color:#7dd3fc;border:1px solid rgba(125,211,252,.35);
+  padding:5px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;
+  letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;font-family:inherit;margin-left:10px;}
+.title-info:hover{background:rgba(125,211,252,.2);border-color:rgba(125,211,252,.6);}
+/* Welcome / About modal */
+#welcome-modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;
+  align-items:center;justify-content:center;z-index:1000;}
+#welcome-modal.show{display:flex;}
+.welcome-modal-content{background:var(--sur);border:1px solid var(--brd);border-radius:12px;
+  padding:32px 38px 28px;max-width:720px;width:92%;max-height:88vh;overflow-y:auto;position:relative;
+  color:var(--txt);box-shadow:0 30px 80px rgba(0,0,0,.75);}
+.welcome-modal-close{position:absolute;top:12px;right:16px;background:none;border:none;
+  color:var(--mut);font-size:28px;line-height:1;cursor:pointer;padding:4px 8px;font-family:inherit;}
+.welcome-modal-close:hover{color:var(--txt);}
+.welcome-modal-content h2{color:#7dd3fc;font-size:22px;margin:0 0 10px 0;letter-spacing:.06em;text-transform:uppercase;font-weight:700;}
+.welcome-modal-content .wm-sub{color:#f59e0b;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:22px;font-weight:600;}
+.welcome-modal-content p{font-size:16px;line-height:1.65;margin:0 0 16px 0;color:var(--txt);}
+.welcome-modal-content .welcome-emphasis{color:#f59e0b;font-weight:600;}
+.welcome-modal-go{display:block;width:100%;margin-top:22px;padding:14px 18px;background:rgba(0,212,255,.18);
+  color:#7dd3fc;border:1px solid rgba(125,211,252,.5);border-radius:6px;font-size:14px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;transition:background .15s;}
+.welcome-modal-go:hover{background:rgba(0,212,255,.3);border-color:rgba(125,211,252,.8);}
 .p-standby{background:rgba(100,116,139,.2);color:var(--mut);border:1px solid var(--brd);}
 .p-active{background:rgba(239,68,68,.15);color:var(--bad);border:1px solid rgba(239,68,68,.4);}
 .p-scan{background:rgba(0,212,255,.12);color:var(--acc);border:1px solid rgba(0,212,255,.35);animation:blink 2s infinite;}
@@ -55,15 +88,15 @@ body{display:flex;flex-direction:column;}
 
 /* panel parts */
 .ph{padding:10px 14px;border-bottom:1px solid var(--brd);font-size:10px;font-weight:700;
-  letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  letter-spacing:.1em;text-transform:uppercase;color:#7dd3fc;
   display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .ph-dot{width:6px;height:6px;border-radius:50%;background:var(--acc);}
 .ps{padding:12px 14px;border-bottom:1px solid var(--brd);}
 .psl{display:block;font-size:10px;font-weight:600;letter-spacing:.07em;
-  text-transform:uppercase;color:var(--mut);margin-bottom:8px;}
+  text-transform:uppercase;color:#7dd3fc;margin-bottom:8px;}
 
 /* buttons */
-.btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
   padding:9px 12px;border-radius:6px;border:1px solid var(--brd);background:var(--sur2);
   color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;
   cursor:pointer;transition:all .15s;margin-bottom:6px;}
@@ -71,8 +104,10 @@ body{display:flex;flex-direction:column;}
 .btn:hover{background:#1e2430;border-color:#3a4050;}
 .bp{background:rgba(0,212,255,.1);border-color:rgba(0,212,255,.4);color:var(--acc);}
 .bp:hover{background:rgba(0,212,255,.18);border-color:var(--acc);}
-.bd{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.4);color:var(--bad);}
-.bd:hover{background:rgba(239,68,68,.18);border-color:var(--bad);}
+.bd{background:rgba(0,212,255,.08);border-color:rgba(125,211,252,.45);padding:13px 14px;}
+.bd:hover{background:rgba(0,212,255,.16);border-color:#7dd3fc;}
+.bd .bd-icon{color:var(--bad);font-size:18px;text-shadow:0 0 6px rgba(239,68,68,.5);line-height:1;}
+.bd .bd-text{color:#7dd3fc;font-size:15px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;}
 .btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:none;}
 
 /* asset grid */
@@ -87,24 +122,76 @@ body{display:flex;flex-direction:column;}
 .abadge.off{opacity:.6;}
 .abadge.off::after{background:var(--mut);box-shadow:none;}
 .abadge.off .abn{text-decoration:line-through;}
+.abadge.silent{opacity:.85;border-style:dashed;}
+.abadge.silent::after{background:#f59e0b;box-shadow:0 0 4px #f59e0b;}
 .abn{font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
 .abc{font-size:15px;font-weight:700;}
 .agrid-hint{font-size:9px;color:#bae6fd;text-transform:uppercase;letter-spacing:.06em;
   margin:-4px 0 6px;text-align:center;opacity:.8;}
 
 /* alerts */
-#alert-feed{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;}
+#alert-feed{flex:1 1 0;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;}
 #alert-feed::-webkit-scrollbar{width:4px;}
 #alert-feed::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
+#taskings-panel{flex:1 1 0;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;}
+#taskings-panel::-webkit-scrollbar{width:4px;}
+#taskings-panel::-webkit-scrollbar-thumb{background:var(--brd);border-radius:2px;}
+#taskings-panel .none{padding:14px;text-align:center;color:var(--mut);font-size:11px;letter-spacing:.06em;text-transform:uppercase;}
+.tp-card{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;padding:8px 10px;border-left:3px solid var(--bad);font-size:11px;}
+.tp-card.arrived{border-left-color:var(--warn);}
+.tp-card.clearing{border-left-color:var(--ok);}
+.tp-card .tp-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.tp-card .tp-label{font-weight:600;color:var(--bad);font-size:10px;text-transform:uppercase;letter-spacing:.5px;}
+.tp-card .tp-timer{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--warn);}
+.tp-card .tp-timer.locked{color:var(--ok);}
+.tp-card .tp-desc{color:var(--txt);font-size:11px;margin-bottom:5px;line-height:1.3;}
+.tp-card .tp-units{display:flex;gap:4px;flex-wrap:wrap;font-size:9px;margin-bottom:3px;}
+.tp-card .tp-unit{background:rgba(0,0,0,.3);border:1px solid var(--brd);padding:1px 6px;border-radius:8px;color:var(--dim);font-weight:600;letter-spacing:.04em;}
+.tp-card .tp-unit.car{color:#16a34a;border-color:rgba(22,163,74,.4);}
+.tp-card .tp-unit.bike{color:#ea580c;border-color:rgba(234,88,12,.4);}
+.tp-card .tp-unit.officer{color:#7c3aed;border-color:rgba(124,58,237,.4);}
+.tp-card .tp-status{font-size:9px;color:var(--dim);margin-top:4px;text-transform:uppercase;letter-spacing:.3px;}
+.tp-card .tp-status.arrived{color:var(--warn);}
+.tp-card .tp-status.clearing{color:var(--ok);}
+.agent-tasked-glow{animation:tasked-glow 1.4s ease-in-out infinite;}
+@keyframes tasked-glow{
+  0%,100%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) brightness(1);}
+  50%{filter:drop-shadow(0 2px 6px rgba(0,0,0,.85)) drop-shadow(0 0 8px var(--warn)) brightness(1.4);}
+}
+.search-marker{width:42px;height:42px;border:2px dashed #f59e0b;border-radius:50%;
+  background:rgba(245,158,11,.10);pointer-events:none;
+  animation:search-pulse 1.8s ease-in-out infinite;
+  display:flex;align-items:center;justify-content:center;
+  color:#f59e0b;font:600 9px sans-serif;letter-spacing:.04em;text-transform:uppercase;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);}
+@keyframes search-pulse{
+  0%,100%{opacity:.7;transform:scale(.9);}
+  50%{opacity:1;transform:scale(1.05);}
+}
+/* Solid black panel for the bad guy hover popup. !important is required
+   because MapLibre's own popup CSS loads after our inline styles and would
+   otherwise override our background at equal specificity. */
+.bg-popup .maplibregl-popup-content{
+  background:#000 !important;
+  color:#f1f5f9 !important;
+  border:1px solid rgba(239,68,68,.65) !important;
+  border-radius:8px !important;
+  padding:12px 14px !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.7) !important;
+}
+.bg-popup .maplibregl-popup-tip{
+  border-top-color:#000 !important;
+  border-bottom-color:#000 !important;
+}
 .ai{background:var(--sur2);border:1px solid var(--brd);border-radius:6px;
   padding:8px 10px;border-left:3px solid var(--brd);}
 .ai.info{border-left-color:var(--acc);}
 .ai.warn{border-left-color:var(--warn);}
 .ai.bad{border-left-color:var(--bad);}
 .ai.ok{border-left-color:var(--ok);}
-.ait{font-size:10px;color:var(--mut);font-family:'JetBrains Mono',monospace;margin-bottom:2px;}
-.aim{font-size:12px;color:var(--dim);line-height:1.4;}
-.aim strong{color:var(--txt);}
+.ait{font-size:10px;color:var(--dim);font-family:'JetBrains Mono',monospace;margin-bottom:2px;}
+.aim{font-size:12px;color:var(--txt);line-height:1.4;}
+.aim strong{color:#ffffff;}
 
 /* incident status */
 #istatus{padding:10px 14px;border-top:1px solid var(--brd);flex-shrink:0;}
@@ -135,7 +222,7 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'Inter',sans-serif;
   overflow:hidden;color:#fff;}
 .spop.cam-traf{border-color:#eab308;}
-.spop.cam-surv{border-color:#2563eb;}
+.spop.cam-surv{border-color:#93c5fd;}
 .spop.ag-drone{border-color:#0284c7;}
 .spop.ag-car{border-color:#16a34a;}
 .spop.ag-bike{border-color:#ea580c;}
@@ -207,6 +294,22 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 0 12px #ec4899,0 0 4px white inset;}
 @keyframes gs-ring{0%{transform:scale(.4);opacity:1;}100%{transform:scale(2.6);opacity:0;}}
 
+/* ── Phase 3: shots_fired acoustic-triangulation crosshair ─────────────── */
+.tri-crosshair{width:48px;height:48px;position:relative;pointer-events:none;}
+.tri-crosshair::before,
+.tri-crosshair::after{
+  content:'';position:absolute;background:#dc2626;
+  box-shadow:0 0 8px #dc2626,0 0 16px rgba(220,38,38,.5);
+}
+.tri-crosshair::before{left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);}
+.tri-crosshair::after{top:50%;left:0;right:0;height:2px;transform:translateY(-50%);}
+.tri-crosshair .ring{position:absolute;inset:6px;border:2px solid #dc2626;border-radius:50%;
+  animation:tri-pulse 1.2s infinite ease-out;box-shadow:0 0 6px rgba(220,38,38,.6);}
+.tri-crosshair .dot{position:absolute;left:50%;top:50%;width:8px;height:8px;
+  background:#fca5a5;border-radius:50%;transform:translate(-50%,-50%);
+  box-shadow:0 0 10px #dc2626,0 0 3px white inset;}
+@keyframes tri-pulse{0%{transform:scale(.55);opacity:1;}100%{transform:scale(1.7);opacity:0;}}
+
 /* Fire Weapon button accent */
 .btn.fw{background:linear-gradient(135deg,#ec4899,#be185d);color:white;font-weight:700;
   border-color:#ec4899;}
@@ -272,12 +375,33 @@ body{display:flex;flex-direction:column;}
 </head>
 <body>
 
+<div id="welcome-modal" onclick="if(event.target.id==='welcome-modal')hideWelcome();">
+  <div class="welcome-modal-content">
+    <button class="welcome-modal-close" onclick="hideWelcome()" aria-label="Close">&times;</button>
+    <h2>Welcome to Boston UnCommon</h2>
+    <div class="wm-sub">Agentic AI &middot; Computer Vision &middot; 911 Deployment Simulation</div>
+    <p>An <strong>agentic AI computer vision actionable intelligence model</strong> that uses computer vision and object detection from 911-call audio attributes &mdash; speech-to-text that spawns object search or pursuit.</p>
+    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, surveillance cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
+    <p class="welcome-emphasis">Press &ldquo;Answer 911 Call&rdquo; to put the Security Operations Center into action.</p>
+    <p>An event object or person will be placed on the map based on call information, and then all the cameras&rsquo; fields of view can be used to locate and vector resources to resolve the 911 call tasking.</p>
+    <p>This is a thought-stimulation exercise to imagine what is possible when computer vision telemetry data can be coordinated and tasking to law enforcement help is automatically deployed.</p>
+    <button class="welcome-modal-go" onclick="hideWelcome()">Continue to Simulation &rsaquo;</button>
+  </div>
+</div>
+
 <div id="topbar">
-  <div class="logo">Boston <span style="color:#ef4444">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
+  <div class="logo">Boston <span style="color:#ff2d2d;font-weight:700;text-shadow:0 0 6px rgba(255,60,60,0.45);">Un</span>common</div>
   <div class="sep"></div>
+  <div class="title-text">Security Operations Center<span class="ttsep">&middot;</span>AI Computer Vision<span class="ttsep">&middot;</span><span class="ttsim">Agentic 911 Deployment Simulation</span></div>
+  <div class="topbar-spacer"></div>
   <span class="tlabel">Response&nbsp;Time&nbsp;&nbsp;</span>
   <div id="timer">00:00</div>
+  <div id="avg-block">
+    <span class="tlabel">Avg Response</span>
+    <div id="avg-timer" class="empty">--:--</div>
+  </div>
   <div id="syspill" class="pill p-standby">Standby</div>
+  <button class="title-info" onclick="showWelcome()">About</button>
 </div>
 
 <div id="main">
@@ -287,20 +411,19 @@ body{display:flex;flex-direction:column;}
     <div class="ps">
       <span class="psl">Operations</span>
       <button class="btn bp" id="btn-start" disabled style="display:none">&#9889; Start Scenario</button>
-      <button class="btn" id="btn-reset" disabled>&#8635; Reset</button>
+      <button class="btn" id="btn-reset" disabled>&#8635; Reset &amp; Reposition All Police Assets</button>
     </div>
     <div class="ps">
-      <span class="psl">Deploy Incident</span>
-      <button class="btn bd" id="btn-deploy" disabled>&#9760; Deploy 911 Incident</button>
-      <div id="tpicker" style="display:none;margin-top:8px;">
-        <span class="psl">Incident Type</span>
-        <button class="btn bd" onclick="pickType('car')">&#128663; Red Car</button>
-        <button class="btn bd" onclick="pickType('bike')">&#128690; Red Bike</button>
-        <button class="btn bd" onclick="pickType('person')">&#128694; Red Person</button>
+      <span class="psl">911 Dispatch</span>
+      <button class="btn bd" id="btn-deploy" disabled><span class="bd-icon">&#128222;</span><span class="bd-text">Answer 911 Call</span></button>
+      <div id="call-display" style="display:none;margin-top:10px;font-size:11px;line-height:1.5;background:rgba(0,0,0,0.25);border-left:3px solid var(--bad);padding:9px 10px;border-radius:3px;">
+        <div id="call-label" style="font-weight:600;color:var(--bad);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;"></div>
+        <div id="call-body" style="color:var(--ink);font-style:italic;"></div>
+        <div id="call-meta" style="font-size:9px;color:var(--mut);margin-top:6px;text-transform:uppercase;letter-spacing:0.3px;"></div>
       </div>
     </div>
     <div class="ps">
-      <span class="psl">Assets Deployed</span>
+      <span class="psl">Deployed / Assets Available</span>
       <div class="agrid-hint">Click any badge to toggle that layer</div>
       <div class="agrid">
         <div class="abadge" data-toggle="drones" onclick="toggleAssetType('drones')"><span style="font-size:16px">&#128641;</span><div><div class="abn">Drones</div><div class="abc" id="c-dr">0/3</div></div></div>
@@ -308,13 +431,13 @@ body{display:flex;flex-direction:column;}
         <div class="abadge" data-toggle="bikes" onclick="toggleAssetType('bikes')"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge" data-toggle="officers" onclick="toggleAssetType('officers')"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge" data-toggle="traffic-cams" onclick="toggleAssetType('traffic-cams')"><span style="font-size:16px;color:#eab308;">&#128678;</span><div><div class="abn">Traffic Cams</div><div class="abc" id="c-cam-traf">0/0</div></div></div>
-        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#2563eb;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
         <div class="abadge" data-toggle="mics" onclick="toggleAssetType('mics')"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
     </div>
     <div style="flex:1;"></div>
-    <div class="ps" style="font-size:10px;color:var(--mut);line-height:1.9;">
-      <div>&#128205; Boston Common &middot; 5mi grid</div>
+    <div class="ps" style="font-size:10px;color:var(--dim);line-height:1.9;">
+      <div>&#128205; Boston Common &middot; ~2.5mi operational area</div>
+      <div>&#128739; Per-unit patrol radius: 1mi from spawn</div>
       <div>&#128506; OpenStreetMap / OpenFreeMap</div>
       <div id="rdstat" style="color:var(--brd);">Road network: loading...</div>
     </div>
@@ -328,33 +451,15 @@ body{display:flex;flex-direction:column;}
 
   <div id="right-panel">
     <div class="ph"><div class="ph-dot" style="background:var(--bad)"></div>Alert Feed</div>
-    <div id="sensor-feed">
-      <div class="sf-hd">
-        <span>Nearest Sensor</span>
-        <span class="sf-on" id="sf-on" style="display:none;">LIVE</span>
-      </div>
-      <div class="sf-body" id="sf-body">
-        <div class="none" id="sf-empty">Deploy a target to view nearest sensor</div>
-      </div>
-      <div class="sf-foot">
-        <span class="id" id="sf-id">--</span>
-        <span class="dist none" id="sf-dist">--</span>
-      </div>
-    </div>
     <div id="alert-feed">
       <div class="ai info">
         <div class="ait">00:00:00</div>
         <div class="aim"><strong>System online.</strong> Awaiting scenario.</div>
       </div>
     </div>
-    <div id="bg-panel" class="ps" style="display:none;">
-      <div id="bg-attrs"></div>
-    </div>
-    <div id="istatus">
-      <div class="ir"><div class="irk">Incident</div><div class="irv none" id="i-type">None</div></div>
-      <div class="ir"><div class="irk">Location</div><div class="irv none" id="i-loc">--</div></div>
-      <div class="ir"><div class="irk">Status</div><div class="irv none" id="i-stat">Standby</div></div>
-      <div class="ir"><div class="irk">Detections</div><div class="irv" id="i-det">0</div></div>
+    <div class="ph" style="border-top:1px solid var(--brd);"><div class="ph-dot" style="background:var(--warn)"></div>Active Incidents<span id="active-count" style="margin-left:auto;color:var(--mut);font-weight:400;font-size:10px;">0</span></div>
+    <div id="taskings-panel">
+      <div class="none" id="tp-empty">No active incidents</div>
     </div>
   </div>
 
@@ -364,8 +469,23 @@ body{display:flex;flex-direction:column;}
 var CENTER = [-71.0659, 42.3551];
 var map, timerSec=0, timerInt=null, scenarioOn=false, deployMode=false, pendingType=null;
 
+// Phase 2: multi-incident state
+var badGuys = [];           // array of active incidents (BadGuy instances with incident metadata)
+var incidentSeq = 0;        // monotonic id counter
+var taskingsRenderInt = null; // 1s interval to refresh tasking card timers
+var responseTimings = [];   // seconds, one per completed-arrival incident — for the running average
+
+// Welcome modal handlers — auto-shows on every page load. Dismissed for the
+// current session via the Continue button, the close icon, or backdrop click.
+function showWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.add('show');}
+function hideWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.remove('show');}
+
 // ── MAP INIT inside window.load — guarantees DOM + external CSS fully resolved ──
 window.addEventListener('load', function() {
+
+  // Auto-open the welcome modal on every page load — dismissed by clicking
+  // Continue to Simulation, the X, or anywhere outside the modal.
+  showWelcome();
 
   map = new maplibregl.Map({
     container: 'map',
@@ -394,6 +514,9 @@ window.addEventListener('load', function() {
     // reflect the off state and any prematurely-created markers are hidden
     applyAssetVisibility();
 
+    // (Boston Common label removed per user preference — the map style's own park
+    // label appears as you zoom in and is enough.)
+
     // Darken all text/label layers for better street name readability
     map.getStyle().layers.forEach(function(layer) {
       if (layer.type === 'symbol') {
@@ -406,7 +529,7 @@ window.addEventListener('load', function() {
     document.getElementById('rdstat').textContent = 'Road network: ready';
     document.getElementById('rdstat').style.color = '#22c55e';
     addAlert('info', 'Map grid online. Boston Common 5-mile operational area active.');
-    addAlert('info', 'Click <strong>Start Scenario</strong> to deploy units.');
+    addAlert('info', 'Click <strong>Answer 911 Call</strong> to spawn an incident.');
     loadRoadNetwork();
   });
 
@@ -557,7 +680,8 @@ function stopSensorFeed() {
 // ── DEPLOY ───────────────────────────────────────────────────────────────────
 function pickType(type){
   pendingType=type;
-  document.getElementById('tpicker').style.display='none';
+  var _tp = document.getElementById('tpicker');
+  if (_tp) _tp.style.display='none';
   deployMode=true;
   document.getElementById('map').classList.add('deploy');
   document.getElementById('dbanner').classList.add('show');
@@ -570,27 +694,406 @@ function exitDeploy(){
 }
 function placeBadGuy(lat,lng,type){
   exitDeploy();
-  if (badGuy) clearIncident();
-  // Snap to nearest valid road node for this bad guy type
+  // Phase 2: multi-incident — no longer clearIncident first
   var snapped = roadNetworkReady ? snapToRoad(lat, lng, type) : { lat: lat, lon: lng };
   lat = snapped.lat; lng = snapped.lon;
-  badGuy = new BadGuy(type, lat, lng);
-  badGuy.maxSpeed = MODE_MAX_SPEED[type] || 30;
-  badGuy.addToMap();
-  var labels={car:'Red Car',bike:'Red Bike',person:'Red Person'};
-  detectionCount=0;
-  document.getElementById('i-det').textContent='0';
-  document.getElementById('i-type').textContent=labels[type];
-  document.getElementById('i-type').classList.remove('none');
-  document.getElementById('i-loc').textContent=lat.toFixed(4)+', '+lng.toFixed(4);
-  document.getElementById('i-loc').classList.remove('none');
-  document.getElementById('i-stat').textContent='Active';
-  document.getElementById('i-stat').classList.remove('none');
-  incidentOn=true;
+  var bg = new BadGuy(type, lat, lng);
+  bg.id = ++incidentSeq;
+  bg.taskedUnits = {};      // { car:agent, bike:agent, officer:agent, drone:agent }
+  bg.timerStart = Date.now();
+  bg.timerEnd = null;       // set when first non-drone tasked unit arrives
+  bg.arrivedAt = null;      // set when car arrives (starts 30s clear)
+  bg.clearAt = null;        // set when arrivedAt + 15s
+  bg.incidentStatus = 'active';
+  bg.maxSpeed = MODE_MAX_SPEED[type] || 30;
+  // Phase 4: CV search position — what units *believe* the suspect's location is.
+  // Initialized to the 911 call's reported location. Updated when any sensor (camera
+  // or unit body/dash cam) FOV-detects the suspect. With no sensor coverage, this
+  // stays stale at the call location → units arrive at empty location → no arrest.
+  bg.searchLat = lat;
+  bg.searchLon = lng;
+  bg.lastDetectedAt = bg.timerStart; // for staleness display
+  bg._detectionLog = {}; // detector_id → last-alert-ms (debounce)
+  // Stationary incidents stay put
+  if (bg.incidentMeta && bg.incidentMeta.motion === 'still') bg.maxSpeed = 0;
+  bg.addToMap();
+  // Phase 4: visual "last known position" marker (amber dashed circle) — shows
+  // where AI thinks the suspect is. When divergence is small, it sits on top of the
+  // suspect (low opacity). As bad guy moves out of sensor coverage, it stays put
+  // at the last known location, making the gap visible.
+  var smEl = document.createElement('div');
+  smEl.className = 'search-marker';
+  smEl.textContent = '#' + bg.id;
+  bg.searchMarker = new maplibregl.Marker({ element: smEl, anchor: 'center' })
+    .setLngLat([bg.searchLon, bg.searchLat])
+    .addTo(map);
+  // Phase 2.1: initialize road-graph tracking so motion follows streets, not straight lines
+  if (roadNetworkReady) {
+    bg.currentNode = nearestNode(bg.lat, bg.lon);
+    bg.prevNode = null;
+    bg.targetNode = null; // picked on first move tick
+  }
+  badGuys.push(bg);
+  badGuy = bg;              // focused incident (most recent)
+  incidentOn = true;
   startTimer(); setPill('active','Active Incident');
-  addAlert('bad','<strong>911 INCIDENT DEPLOYED</strong> — '+labels[type]+' at '+lat.toFixed(4)+', '+lng.toFixed(4));
-  showBadGuyPanel(type);
-  startSensorFeed();
+  // Dispatch closest available car/bike/officer to this incident
+  dispatchToIncident(bg);
+  // Note: dispatch alert is fired by answer911Call AFTER incidentMeta is
+  // attached, so it can include the call's color/object/location.
+  renderTaskings();
+  // Start 1-second timer refresh for tasking cards (only once)
+  if (!taskingsRenderInt) taskingsRenderInt = setInterval(renderTaskings, 1000);
+}
+
+
+// ── Phase 2: Multi-incident dispatch & lifecycle ────────────────────────────
+// Returns the active incident this agent is tasked to (or null)
+function targetFor(agent) {
+  if (!agent || !agent.taskedTo) return null;
+  for (var i = 0; i < badGuys.length; i++) {
+    if (badGuys[i].id === agent.taskedTo) return badGuys[i];
+  }
+  return null;
+}
+
+// Dispatch closest available car / bike / officer to this incident.
+// Drone is also assigned if available (passive ISR overhead).
+function dispatchToIncident(bg) {
+  ['car','bike','officer','drone'].forEach(function(type) {
+    // Find closest non-tasked, non-captured agent of this type
+    var pool = agents.filter(function(a) {
+      return a.type === type && a.status !== 'captured' && !a.taskedTo;
+    });
+    if (!pool.length) return;
+    var best = pool[0], bestD = Infinity;
+    pool.forEach(function(a) {
+      var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+      if (d < bestD) { bestD = d; best = a; }
+    });
+    best.taskedTo = bg.id;
+    best.status = 'pursuing';
+    // Reset bearing-flip and jump state — a legitimate dispatch direction
+    // change isn't oscillation, and jumps from the previous task shouldn't
+    // count toward the new one.
+    best._lastBearing = null;
+    best._flipCount   = 0;
+    best._commitUntil = 0;
+    best._jumpCount   = 0;
+    best.targetNode = best._pickPursuitTarget();
+    best.pauseUntil = 0;
+    // Visual: the tasked unit's icon pulses brighter with an orange glow.
+    // No DOM children, no position override — just a CSS animation class on the marker.
+    if (best.marker && best.marker._element) {
+      best.marker._element.classList.add('agent-tasked-glow');
+    }
+    bg.taskedUnits[type] = best;
+  });
+  bg.incidentStatus = 'tasked';
+  updateAssetCounts();
+  // Add an alert noting who was dispatched
+  var who = [];
+  ['car','bike','officer','drone'].forEach(function(t) {
+    if (bg.taskedUnits[t]) who.push(bg.taskedUnits[t].cfg.label + ' ' + bg.taskedUnits[t].id);
+  });
+  if (who.length) {
+    addAlert('warn', 'Dispatch on incident #' + bg.id + ': ' + who.join(', ') + '.');
+  }
+}
+
+// Return a tasked agent to patrol when its incident closes.
+// If another active incident lacks this unit type, the unit is reassigned
+// to the closest one instead of going back to patrol.
+function returnFromTasking(agent) {
+  if (!agent) return;
+  // Clear current tasking state
+  agent.taskedTo = null;
+  agent._hasVisual = false;
+  // Look for another active incident that needs this unit type
+  var bestBg = null, bestD = Infinity;
+  badGuys.forEach(function(bg) {
+    if (!bg || !bg.active) return;
+    if (bg.incidentStatus === 'clearing') return; // already containing
+    if (bg.taskedUnits && bg.taskedUnits[agent.type]) return; // already has one
+    var d = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
+    if (d < bestD) { bestD = d; bestBg = bg; }
+  });
+  if (bestBg) {
+    // Reassign instead of returning to patrol
+    agent.taskedTo = bestBg.id;
+    agent.status   = 'pursuing';
+    agent.pauseUntil = 0;
+    // Reset bearing-flip and jump state — a reassignment U-turn isn't oscillation
+    agent._lastBearing = null;
+    agent._flipCount   = 0;
+    agent._commitUntil = 0;
+    agent._jumpCount   = 0;
+    if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
+    bestBg.taskedUnits[agent.type] = agent;
+    // Keep the tasked glow
+    if (agent.marker && agent.marker._element) {
+      agent.marker._element.classList.add('agent-tasked-glow');
+    }
+    addAlert('warn', agent.cfg.label + ' ' + agent.id + ' reassigned to Incident #' + bestBg.id + '.');
+    updateAssetCounts();
+    renderTaskings();
+    return;
+  }
+  // Otherwise: actually return to patrol
+  agent.status = 'patrol';
+  // Reset flip and jump state on return-to-patrol too — fresh start
+  agent._lastBearing = null;
+  agent._flipCount   = 0;
+  agent._commitUntil = 0;
+  agent._jumpCount   = 0;
+  if (agent.marker && agent.marker._element) {
+    agent.marker._element.classList.remove('agent-tasked-glow');
+  }
+  if (agent.type !== 'drone') agent.targetNode = agent._pickTarget();
+}
+
+// Recompute badges. New format: "Deployed / Available".
+// Police: deployed = total in field, available = total minus tasked.
+// Sensors: when toggled on, deployed = inventory and available = same; when off, 0/0.
+function updateAssetCounts() {
+  var totals = { drone:0, car:0, bike:0, officer:0 };
+  var tasked = { drone:0, car:0, bike:0, officer:0 };
+  agents.forEach(function(a) {
+    if (totals[a.type] === undefined) return;
+    totals[a.type]++;
+    if (a.taskedTo) tasked[a.type]++;
+  });
+  function setPoliceBadge(id, type) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = totals[type] + '/' + (totals[type] - tasked[type]);
+  }
+  setPoliceBadge('c-dr','drone');
+  setPoliceBadge('c-ca','car');
+  setPoliceBadge('c-bi','bike');
+  setPoliceBadge('c-of','officer');
+  // Sensors: show "active/visible" so 3-state is legible at a glance.
+  //   27/27 = full   (active + overlay shown)
+  //   27/0  = silent (active + overlay hidden)
+  //   0/0   = off    (inactive)
+  function setSensorBadge(id, inventory, visKey) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var active  = assetVisibility[visKey] ? inventory : 0;
+    var visible = assetGraphics[visKey]   ? inventory : 0;
+    el.textContent = active + '/' + visible;
+  }
+  // All cameras (traffic + surveillance) share one toggle now; show combined total
+  setSensorBadge('c-cam-traf', cameras.length, 'traffic-cams');
+  setSensorBadge('c-mic', mics.length, 'mics');
+}
+
+// Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
+// Arrival thresholds are deliberately generous because police cars and bikes
+// often can't drive ONTO the road the suspect is on (suspect on a footway in
+// Boston Common, car stuck at the nearest curb 40-80m away). For a demo, the
+// nearest-road position counts as "on scene".
+function checkIncidentArrival(bg) {
+  if (!bg || !bg.active) return;
+  // Per-unit distances from incident — needed for both the freeze check
+  // (runs every tick) and the one-shot clearing trigger below.
+  var dists = {};
+  Object.keys(bg.taskedUnits).forEach(function(type) {
+    var a = bg.taskedUnits[type];
+    if (a && a.status === 'pursuing') {
+      dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
+    }
+  });
+  // Per-type capture radii (kept aligned with the clearing-trigger radii below)
+  var carClose     = dists.car     && dists.car.d     < 60;
+  var bikeClose    = dists.bike    && dists.bike.d    < 45;
+  var officerClose = dists.officer && dists.officer.d < 25;
+  // ── Always-on freeze: as soon as ANY non-drone is within its capture
+  // radius, the suspect stops moving. This MUST run on every tick — not just
+  // before clearing — because previously the function early-returned on
+  // 'clearing', so if a car triggered carClose (60m) before ever getting
+  // within 30m, the freeze never fired and the suspect wandered through the
+  // whole 30s clear window with every tasked unit chasing it. That was the
+  // dominant "many oscillating police elements" pattern.
+  if ((carClose || bikeClose || officerClose) && bg.maxSpeed > 0) {
+    bg.maxSpeed = 0;
+    bg.speed    = 0;
+  }
+  // Once clearing has started, nothing else in this function needs to run again
+  if (bg.incidentStatus === 'clearing') return;
+  // First arrival (timer freeze) = any non-drone within 30m
+  var firstArrival = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 30 && !firstArrival) firstArrival = dists[t].agent;
+  });
+  if (firstArrival && !bg.timerEnd) {
+    bg.timerEnd = Date.now();
+    bg.maxSpeed = 0;
+    bg.speed = 0;
+    bg.incidentStatus = 'arrived';
+    var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
+    responseTimings.push(respSec);
+    updateAvgResponseDisplay();
+    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
+      firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
+  }
+  // Adaptive fallback: if any tasked unit has been within 80m of bg for 10s
+  // without triggering clear, treat as arrived. This catches the case where
+  // the suspect's road graph is disjoint from the unit's, leaving the unit
+  // physically stuck just outside the normal threshold.
+  if (!bg._near80SinceTs) bg._near80SinceTs = {};
+  var stuckClose = false, stuckAgent = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 80) {
+      if (!bg._near80SinceTs[t]) bg._near80SinceTs[t] = Date.now();
+      if (Date.now() - bg._near80SinceTs[t] > 10000 && !stuckClose) {
+        stuckClose = true; stuckAgent = dists[t].agent;
+      }
+    } else {
+      bg._near80SinceTs[t] = 0;
+    }
+  });
+  if ((carClose || bikeClose || officerClose || stuckClose) && !bg.arrivedAt) {
+    bg.arrivedAt = Date.now();
+    // Clearing window: 15 seconds from physical arrival to incident close.
+    // Was 30s previously — tightened to reduce on-scene wait.
+    bg.clearAt = bg.arrivedAt + 15000;
+    bg.incidentStatus = 'clearing';
+    var who = carClose ? dists.car.agent
+            : officerClose ? dists.officer.agent
+            : bikeClose ? dists.bike.agent
+            : stuckAgent;
+    addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
+      who.cfg.label + ' ' + who.id + '. Clearing in 15s...');
+  }
+}
+
+function updateAvgResponseDisplay() {
+  var el = document.getElementById('avg-timer');
+  if (!el) return;
+  if (!responseTimings.length) {
+    el.textContent = '--:--';
+    el.classList.add('empty');
+    return;
+  }
+  var sum = responseTimings.reduce(function(a,b){return a+b;}, 0);
+  var avg = Math.round(sum / responseTimings.length);
+  var mm = Math.floor(avg/60), ss = avg%60;
+  el.textContent = (mm<10?'0':'') + mm + ':' + (ss<10?'0':'') + ss;
+  el.classList.remove('empty');
+}
+
+function checkIncidentClear(bg) {
+  if (!bg || !bg.clearAt) return;
+  if (Date.now() < bg.clearAt) return;
+  closeIncident(bg);
+}
+
+// Close one specific incident: return units, remove from map + array, refresh UI
+function closeIncident(bg) {
+  if (!bg) return;
+  // Return all tasked units
+  Object.keys(bg.taskedUnits).forEach(function(type) {
+    returnFromTasking(bg.taskedUnits[type]);
+  });
+  bg.taskedUnits = {};
+  // Remove from map
+  bg.remove();
+  // Phase 4: tear down the search marker
+  if (bg.searchMarker) { try { bg.searchMarker.remove(); } catch(e) {} bg.searchMarker = null; }
+  bg.active = false;
+  // Remove from active list
+  badGuys = badGuys.filter(function(b) { return b !== bg; });
+  // Update focused
+  if (badGuy === bg) {
+    badGuy = badGuys.length ? badGuys[badGuys.length - 1] : null;
+  }
+  updateAssetCounts();
+  renderTaskings();
+  // If no more incidents, drop back to scanning
+  if (!badGuys.length) {
+    incidentOn = false;
+    setPill('scan', 'Scanning');
+    stopTimer();
+    if (taskingsRenderInt) { clearInterval(taskingsRenderInt); taskingsRenderInt = null; }
+  }
+  addAlert('ok', '<strong>Incident #' + bg.id + ' cleared.</strong> Units returning to patrol.');
+}
+
+// Render the Active Incidents card list in #taskings-panel
+function renderTaskings() {
+  var panel = document.getElementById('taskings-panel');
+  var count = document.getElementById('active-count');
+  if (!panel) return;
+  if (count) count.textContent = badGuys.length;
+  if (!badGuys.length) {
+    panel.innerHTML = '<div class="none" id="tp-empty">No active incidents</div>';
+    return;
+  }
+  var now = Date.now();
+  var html = '';
+  badGuys.forEach(function(bg) {
+    var meta = bg.incidentMeta || {};
+    var label = meta.label || (bg.type ? bg.type.toUpperCase() : 'INCIDENT');
+    var color = meta.color || '';
+    var desc;
+    if (bg.type === 'person') {
+      // "Person in orange shirt" — preserves what the color modifies
+      var apparel = meta.apparel || 'clothing';
+      desc = color ? ('Suspect in ' + color + ' ' + apparel) : 'Suspect on foot';
+    } else {
+      var typeWord = (bg.type === 'car') ? 'vehicle' : (bg.type === 'bike' ? 'bike' : bg.type);
+      desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
+    }
+    // Timer: live if !timerEnd, frozen at response time if set
+    var elapsedMs = (bg.timerEnd || now) - bg.timerStart;
+    var elapsedSec = Math.floor(elapsedMs / 1000);
+    var mm = Math.floor(elapsedSec / 60), ss = elapsedSec % 60;
+    var timerStr = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    var timerCls = bg.timerEnd ? 'tp-timer locked' : 'tp-timer';
+    // Status
+    var statusText, statusCls = '';
+    if (bg.incidentStatus === 'clearing') {
+      var remSec = Math.max(0, Math.ceil((bg.clearAt - now) / 1000));
+      statusText = 'Clearing in ' + remSec + 's';
+      statusCls = 'clearing';
+    } else if (bg.incidentStatus === 'arrived') {
+      statusText = 'On scene — awaiting vehicle';
+      statusCls = 'arrived';
+    } else if (bg.incidentStatus === 'tasked') {
+      statusText = 'Units en route';
+    } else {
+      statusText = 'Active';
+    }
+    // Tasked unit pills
+    var units = '';
+    ['car','bike','officer','drone'].forEach(function(t) {
+      var a = bg.taskedUnits[t];
+      if (a) units += '<span class="tp-unit ' + t + '">' + a.cfg.label + ' ' + a.id + '</span>';
+    });
+    if (!units) units = '<span class="tp-unit">No units tasked</span>';
+    var cardCls = 'tp-card' + (statusCls ? ' ' + statusCls : '');
+    html += '<div class="' + cardCls + '">' +
+      '<div class="tp-hdr"><span class="tp-label">#' + bg.id + ' — ' + label + '</span><span class="' + timerCls + '">' + timerStr + '</span></div>' +
+      '<div class="tp-desc">' + desc + '</div>' +
+      '<div class="tp-units">' + units + '</div>' +
+      '<div class="tp-status ' + statusCls + '">' + statusText + '</div>' +
+      '</div>';
+  });
+  panel.innerHTML = html;
+}
+
+// Close every active incident (used by Reset)
+function clearAllIncidents() {
+  // Copy first, since closeIncident mutates badGuys
+  var snapshot = badGuys.slice();
+  snapshot.forEach(function(bg) { closeIncident(bg); });
+  badGuys = [];
+  badGuy = null;
+  if (taskingsRenderInt) { clearInterval(taskingsRenderInt); taskingsRenderInt = null; }
+  // Reset rolling average
+  responseTimings = [];
+  updateAvgResponseDisplay();
+  renderTaskings();
 }
 
 
@@ -598,31 +1101,37 @@ function placeBadGuy(lat,lng,type){
 // STEP 2 — ROAD NETWORK + AGENT CLASSES + SVG ICONS
 // ══════════════════════════════════════════════════════════════════════════════
 
+
+
+
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 var BOSTON_LAT = 42.3551, BOSTON_LNG = -71.0659;
 var OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.fr/api/interpreter'
+  'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter'
 ];
 // 5-mile bounding box: S,W,N,E
 var BBOX = '42.338,-71.090,42.373,-71.042'; // ~1.2mi around Boston Common
 
 // Agent config
 var AGENT_CONFIG = {
-  drone:   { count:3,  fovAngle:360, fovDist:138, speed:25, color:'#0284c7', label:'Drone'   },
-  car:     { count:10, fovAngle:130, fovDist:68,  speed:20, color:'#16a34a', label:'Vehicle' },
-  bike:    { count:10, fovAngle:130, fovDist:55,  speed:15, color:'#ea580c', label:'Bike'    },
-  officer: { count:10, fovAngle:130, fovDist:45,  speed:5,  color:'#7c3aed', label:'Officer' }
+  drone:   { count:3,  fovAngle:360, fovDist:110, speed:25, color:'#0284c7', label:'Drone',   pursuitMult:2.2 },
+  car:     { count:10, fovAngle:130, fovDist:102, speed:20, color:'#16a34a', label:'Vehicle', pursuitMult:2.86 },
+  bike:    { count:10, fovAngle:130, fovDist:83,  speed:15, color:'#ea580c', label:'Bike',    pursuitMult:2.2 },
+  officer: { count:10, fovAngle:130, fovDist:68,  speed:5,  color:'#7c3aed', label:'Officer', pursuitMult:2.2 }
 };
-// fovDist in metres (200ft=61m, 100ft=30m, 75ft=23m)
-// speed in km/h approx (drone 44=27mph, car 37=23mph, bike 18=11mph, officer 5=3mph)
+// fovDist in metres. Ground-unit values bumped +50% from baseline 68/55/45 for
+// wider detection coverage. pursuitMult is the patrol→pursuit speed multiplier
+// per type; car is +30% above the baseline 2.2 (= 2.86) so cruisers actually
+// close on suspects in demo-scale time.
 
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
 // Public surveillance cameras (OSM man_made=surveillance, public-zone only)
 // Color is blue (distinct from drone sky-blue) so they read as a separate sensor class
-var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#2563eb' };
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#93c5fd' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 // Unified visibility map — each badge in the asset grid toggles one of these.
 // Single source of truth for all on/off layer controls.
@@ -631,11 +1140,32 @@ var cameras = [];           // populated after Overpass traffic_signals fetch
 // on Reset for a consistent clean start.
 var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
-  'traffic-cams': false, 'surveillance-cams': false, mics: false
+  'traffic-cams': false, mics: false
 };
+// Sensors (mics + traffic-cams) have a 3-state toggle: off → full → silent → off.
+//   full   — assetVisibility=true,  assetGraphics=true   (active + overlay shown)
+//   silent — assetVisibility=true,  assetGraphics=false  (active + overlay hidden)
+//   off    — assetVisibility=false, assetGraphics=false  (inactive)
+// Agent toggles (drones/vehicles/bikes/officers) remain binary; they don't
+// have an entry in assetGraphics and their rendering follows assetVisibility.
+var DEFAULT_GRAPHICS = { 'traffic-cams': false, mics: false };
 var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
+var assetGraphics   = Object.assign({}, DEFAULT_GRAPHICS);
+
+function getSensorState(type) {
+  if (!(type in assetGraphics)) return null;
+  if (!assetVisibility[type]) return 'off';
+  if (!assetGraphics[type])   return 'silent';
+  return 'full';
+}
+function setSensorState(type, state) {
+  if (state === 'full')   { assetVisibility[type] = true;  assetGraphics[type] = true;  }
+  if (state === 'silent') { assetVisibility[type] = true;  assetGraphics[type] = false; }
+  if (state === 'off')    { assetVisibility[type] = false; assetGraphics[type] = false; }
+}
 function resetAssetVisibility() {
   Object.assign(assetVisibility, DEFAULT_VISIBILITY);
+  Object.assign(assetGraphics,   DEFAULT_GRAPHICS);
   applyAssetVisibility();
 }
 
@@ -643,6 +1173,21 @@ function resetAssetVisibility() {
 // 700m listening radius chosen so 3+ mics hear any point (triangulation coverage)
 // Cell size ~780×660m, diagonal ~1020m → 700m reach covers own cell + neighbors
 var MIC_CONFIG  = { color:'#ec4899', radius:700, rows:4, cols:5 };
+// Hot-spot mic POIs — hand-placed at high-foot-traffic Boston locations
+// that fall in coverage gaps of the mechanical 4×5 grid. With grid spacing
+// roughly 660-780m and TRI_QUALITY_RADIUS=400m for clean triangulation,
+// the grid alone leaves much of central Boston (especially around the
+// Common) without 3-mic overlap. Coordinates verified from Google Places.
+// Added after the grid in placeMics(), giving 20 + 7 = 27 total mics.
+var POI_MICS = [
+  { lat: 42.3563, lon: -71.0624, name: 'Park Street T' },        // Boston Common center
+  { lat: 42.3541, lon: -71.0701, name: 'Public Garden' },        // Common SW adjacent
+  { lat: 42.3588, lon: -71.0638, name: 'MA State House' },       // Common N edge / Beacon Hill
+  { lat: 42.3612, lon: -71.0705, name: 'Charles/MGH' },          // NW gap
+  { lat: 42.3555, lon: -71.0594, name: 'Downtown Crossing' },    // central business district
+  { lat: 42.3602, lon: -71.0551, name: 'Faneuil Hall' },         // east-edge / tourist area
+  { lat: 42.3504, lon: -71.0654, name: 'Theater District' }      // south of Common (Shubert)
+];
 var mics        = [];
 
 // ── ROAD GRAPH ────────────────────────────────────────────────────────────────
@@ -651,19 +1196,29 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
   car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
-  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
+  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|track|living_street)$/,
   officer: /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
 
+// Highway types SUSPECTS spawn on. Tighter than ALLOWED_HIGHWAYS.car — every
+// named city street where a 911 call realistically originates, nothing else.
+// Excludes motorway/trunk (sim doesn't care about expressway incidents),
+// *_link ramps (not pedestrian-realistic), and service roads (driveways,
+// parking aisles, alley access — the source of "in a back lot somewhere"
+// spawns where ground units physically can't get to the suspect).
+var SPAWN_HIGHWAYS = /^(primary|secondary|tertiary|residential|unclassified)$/;
+
 function buildGraph(data) {
   var nodes = {};
+  roadGraph.wayNames = {}; // wayId -> street name from OSM 'name' tag
   data.elements.forEach(function(el) {
     if (el.type === 'node') nodes[el.id] = { lat: el.lat, lon: el.lon, neighbors: [] };
   });
   data.elements.forEach(function(el) {
     if (el.type !== 'way') return;
     var hw = (el.tags && el.tags.highway) || 'unclassified';
+    if (el.tags && el.tags.name) roadGraph.wayNames[el.id] = el.tags.name;
     for (var i = 0; i < el.nodes.length - 1; i++) {
       var a = el.nodes[i], b = el.nodes[i+1];
       if (!nodes[a] || !nodes[b]) continue;
@@ -700,6 +1255,20 @@ function buildGraph(data) {
   });
   // Drone can use any node
   roadGraph.nodesByType['drone'] = roadGraph.nodeIds;
+
+  // Spawn pool: tighter than nodesByType.car — only nodes on real city streets
+  // (primary/secondary/tertiary/residential/unclassified), so suspect spawns
+  // never land on highway ramps, service roads, or alley fragments that
+  // ground units can't sensibly reach.
+  roadGraph.spawnNodes = roadGraph.nodeIds.filter(function(nid) {
+    var n = nodes[nid];
+    if (!n || !n.neighborHW) return false;
+    return Object.keys(n.neighborHW).some(function(nb) {
+      var info = n.neighborHW[nb];
+      var hw = info && info.hw ? info.hw : info;
+      return SPAWN_HIGHWAYS.test(hw);
+    });
+  });
 
   return roadGraph.nodeIds.length;
 }
@@ -752,6 +1321,63 @@ function nearestNode(lat, lon) {
   return best;
 }
 
+// Return the name of any street touching this road-graph node (or null if unnamed)
+function _wayNameAtNode(nodeId) {
+  var n = roadGraph.nodes[nodeId];
+  if (!n || !n.neighborHW || !roadGraph.wayNames) return null;
+  var keys = Object.keys(n.neighborHW);
+  for (var i = 0; i < keys.length; i++) {
+    var info = n.neighborHW[keys[i]];
+    if (info && info.wayId && roadGraph.wayNames[info.wayId]) {
+      return roadGraph.wayNames[info.wayId];
+    }
+  }
+  return null;
+}
+
+function streetNameAtNode(nodeId) {
+  if (!nodeId || !roadGraph.nodes[nodeId]) return null;
+  // 1) Direct hit — way name at this node
+  var direct = _wayNameAtNode(nodeId);
+  if (direct) return direct;
+  // 2) BFS outward up to 8 hops looking for any named way. Was 3 — extended
+  //    because some unnamed footway pockets in the Common/Garden interior
+  //    were too far from any named way and the resolver was falling back to
+  //    coordinates, which is not how a 911 caller talks.
+  var visited = {};
+  visited[nodeId] = true;
+  var queue = [{ id: nodeId, depth: 0 }];
+  while (queue.length) {
+    var item = queue.shift();
+    if (item.depth >= 8) continue;
+    var n = roadGraph.nodes[item.id];
+    if (!n || !n.neighbors) continue;
+    for (var i = 0; i < n.neighbors.length; i++) {
+      var nb = n.neighbors[i];
+      if (visited[nb]) continue;
+      visited[nb] = true;
+      var name = _wayNameAtNode(nb);
+      if (name) return name;
+      queue.push({ id: nb, depth: item.depth + 1 });
+    }
+  }
+  // 3) Last resort: geographically nearest named node anywhere in the graph.
+  //    O(N) but rare — fires only when 8-hop BFS failed. Guarantees we never
+  //    return null as long as the graph has any named ways at all.
+  var startN = roadGraph.nodes[nodeId];
+  var best = null, bestD = Infinity;
+  for (var j = 0; j < roadGraph.nodeIds.length; j++) {
+    var id = roadGraph.nodeIds[j];
+    if (!_wayNameAtNode(id)) continue;
+    var n2 = roadGraph.nodes[id];
+    if (!n2) continue;
+    var dlat = n2.lat - startN.lat, dlon = n2.lon - startN.lon;
+    var d2 = dlat * dlat + dlon * dlon;
+    if (d2 < bestD) { bestD = d2; best = id; }
+  }
+  return best ? _wayNameAtNode(best) : null;
+}
+
 function haversineM(lat1, lon1, lat2, lon2) {
   var R = 6371000, dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
   var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
@@ -767,9 +1393,41 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
 }
 
+// Try a static JSON file shipped alongside index.html — bulletproof local
+// fallback. Probes ./cache/{name}.json first (organized layout), then
+// ./{name}.json (root-level layout). Either deployment style works.
+// Returns null on any failure and the caller falls through to live Overpass.
+async function _tryLocalStatic(filename) {
+  var prefixes = ['./cache/', './'];
+  for (var i = 0; i < prefixes.length; i++) {
+    try {
+      var r = await fetch(prefixes[i] + filename, { cache: 'no-cache' });
+      if (r.ok) return await r.json();
+    } catch(e) { /* try next prefix */ }
+  }
+  return null;
+}
+
 async function fetchOverpass(mirrorIdx) {
+  // First call only (mirrorIdx 0 or undefined): try the static local cache.
+  // Recursive mirror calls pass 1, 2, 3 and skip this.
+  if (!mirrorIdx) {
+    var local = await _tryLocalStatic('roads.json');
+    if (local) {
+      console.info('Roads loaded from static cache (./cache/roads.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    // All live mirrors failed — try the localStorage cache before giving up
+    var cached = _osmCacheGet('roads');
+    if (cached) {
+      addAlert('info', '<strong>Using cached road network</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed');
+  }
   var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|footway|path|pedestrian|cycleway|track|service)$"]('+BBOX+'););out body;>;out skel qt;';
   try {
     var controller = new AbortController();
@@ -780,7 +1438,9 @@ async function fetchOverpass(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('roads', data);   // cache fresh response for fallback
+    return data;
   } catch(e) {
     console.warn('Overpass mirror '+mirrorIdx+' failed:', e.message);
     return fetchOverpass(mirrorIdx + 1);
@@ -789,8 +1449,22 @@ async function fetchOverpass(mirrorIdx) {
 
 // Fetch real traffic-signal intersections from OSM (one node per signalised intersection)
 async function fetchTrafficSignals(mirrorIdx) {
+  if (!mirrorIdx) {
+    var local = await _tryLocalStatic('signals.json');
+    if (local) {
+      console.info('Signals loaded from static cache (./cache/signals.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (signals)');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    var cached = _osmCacheGet('signals');
+    if (cached) {
+      addAlert('info', '<strong>Using cached traffic signals</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed (signals)');
+  }
   var query = '[out:json][timeout:25];node["highway"="traffic_signals"]('+BBOX+');out body;';
   try {
     var controller = new AbortController();
@@ -801,7 +1475,9 @@ async function fetchTrafficSignals(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('signals', data);
+    return data;
   } catch(e) {
     console.warn('Signals mirror '+mirrorIdx+' failed:', e.message);
     return fetchTrafficSignals(mirrorIdx + 1);
@@ -810,8 +1486,22 @@ async function fetchTrafficSignals(mirrorIdx) {
 
 // Fetch OSM-mapped public surveillance cameras (community-tagged CCTV in public zones)
 async function fetchSurveillanceCameras(mirrorIdx) {
+  if (!mirrorIdx) {
+    var local = await _tryLocalStatic('surveillance.json');
+    if (local) {
+      console.info('Surveillance loaded from static cache (./cache/surveillance.json)');
+      return local;
+    }
+  }
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (surveillance)');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    var cached = _osmCacheGet('surveillance');
+    if (cached) {
+      addAlert('info', '<strong>Using cached surveillance cams</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed (surveillance)');
+  }
   // Filter to public/traffic/town zones to avoid plotting private home cameras
   var query = '[out:json][timeout:25];(' +
     'node["man_made"="surveillance"]["surveillance:zone"~"public|traffic|town|parking|transit"]('+BBOX+');' +
@@ -826,12 +1516,60 @@ async function fetchSurveillanceCameras(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('surveillance', data);
+    return data;
   } catch(e) {
     console.warn('Surveillance mirror '+mirrorIdx+' failed:', e.message);
     return fetchSurveillanceCameras(mirrorIdx + 1);
   }
 }
+
+// ── OSM RESPONSE CACHE (localStorage) ─────────────────────────────────────────
+// Overpass API is rate-limited and goes down intermittently. After any
+// successful fetch, we cache the raw JSON response in localStorage. On a
+// subsequent load where Overpass is unreachable, fall back to the cached
+// response so the simulation still loads with real Boston data. Cache key
+// includes BBOX so a bbox change naturally invalidates. Total cache footprint
+// is typically <2MB (roads + signals + surveillance), well under the
+// browser's localStorage quota (5-10MB depending on browser).
+function _osmCacheKey(name) {
+  return 'osmCache:' + name + ':' + BBOX;
+}
+function _osmCacheGet(name) {
+  try {
+    var raw = localStorage.getItem(_osmCacheKey(name));
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (parsed && parsed.data && parsed.ts) return parsed;
+    return null;
+  } catch(e) { return null; }
+}
+function _osmCacheSet(name, data) {
+  try {
+    localStorage.setItem(_osmCacheKey(name), JSON.stringify({ data: data, ts: Date.now() }));
+  } catch(e) {
+    console.warn('OSM cache write failed for ' + name + ':', e.message);
+  }
+}
+function _osmCacheAgeStr(ts) {
+  var ms = Date.now() - ts;
+  var min = Math.round(ms / 60000);
+  if (min < 60) return min + 'min';
+  var hr = Math.round(min / 60);
+  if (hr < 24) return hr + 'h';
+  var d = Math.round(hr / 24);
+  return d + 'd';
+}
+// Dev convenience: run window.clearOSMCache() in the console to wipe cached
+// OSM data and force a fresh Overpass fetch on next load.
+window.clearOSMCache = function() {
+  var n = 0;
+  Object.keys(localStorage).forEach(function(k) {
+    if (k.indexOf('osmCache:') === 0) { localStorage.removeItem(k); n++; }
+  });
+  console.log('Cleared ' + n + ' OSM cache entries. Reload to refetch from Overpass.');
+};
 
 // ── SATELLITE SNAPSHOT (Esri World Imagery — public tiles, non-commercial use) ─
 // ── SATELLITE TILE (Esri World Imagery) + MAPILLARY STREET-LEVEL ────────────
@@ -855,18 +1593,19 @@ function satelliteTileURL(lat, lon, zoom) {
   return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+zoom+'/'+y+'/'+x;
 }
 
-// Mapillary: query nearest image to a coord, return thumbnail URL or null
-// Cache key rounds lat/lon to ~10m so we don't re-fetch identical queries
-var mapillaryCache = {};   // key -> { url: string|null, ts: ms }
+// Mapillary: query nearest image to a coord, return thumbnail URL or null.
+// Cache is keyed on (rounded coords, radius) so different-radius queries
+// for the same point cache separately — important for the camera widen-retry
+// pattern: a first-pass miss at small radius shouldn't poison a wider second pass.
+var mapillaryCache = {};
 var MAPILLARY_CACHE_TTL = 30 * 60 * 1000;  // 30 min
-function fetchMapillarySnapshot(lat, lon) {
-  var key = lat.toFixed(4) + '|' + lon.toFixed(4);
+function fetchMapillarySnapshot(lat, lon, d) {
+  if (typeof d !== 'number') d = 0.0005;     // default ~55m square
+  var key = lat.toFixed(4) + '|' + lon.toFixed(4) + '|' + d.toFixed(4);
   var hit = mapillaryCache[key];
   if (hit && (Date.now() - hit.ts) < MAPILLARY_CACHE_TTL) {
     return Promise.resolve(hit.url);
   }
-  // bbox ~110m square (well under Mapillary's 0.01° limit)
-  var d = 0.0005;
   var bbox = (lon - d) + ',' + (lat - d) + ',' + (lon + d) + ',' + (lat + d);
   var url = 'https://graph.mapillary.com/images?fields=id,thumb_1024_url&bbox=' + bbox +
     '&limit=1&access_token=' + MAPILLARY_TOKEN;
@@ -887,7 +1626,8 @@ function fetchMapillarySnapshot(lat, lon) {
 // Pick the right imagery source for a sensor type
 // kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf' | 'cam-surv'
 function getSensorImage(lat, lon, kindClass) {
-  // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees
+  // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees.
+  // Satellite imagery is the correct image for an overhead camera.
   if (kindClass === 'ag-drone') {
     return Promise.resolve({
       url: satelliteTileURL(lat, lon, 18),
@@ -895,11 +1635,38 @@ function getSensorImage(lat, lon, kindClass) {
       attribution: 'Aerial \u00A9 Esri'
     });
   }
-  // Ground-level sensors: try Mapillary first, fall back to aerial honestly labelled
-  return fetchMapillarySnapshot(lat, lon).then(function(thumb) {
-    if (thumb) return { url: thumb, sourceLabel: 'STREET VIEW', attribution: 'Photo \u00A9 Mapillary' };
+  // Cameras stand in for a fixed-mount JPEG feed. Boston doesn't expose a
+  // public CORS-friendly endpoint per OSM-tagged camera, so we proxy with
+  // Mapillary's crowd-sourced street-level photography — visually equivalent
+  // to "what a camera at this corner sees." Try a generous radius first
+  // (~165m) since cameras at intersections often have their nearest
+  // Mapillary photo down a road approach; if that misses, retry at ~330m;
+  // only then fall back to aerial.
+  var isCam   = (kindClass === 'cam-traf' || kindClass === 'cam-surv');
+  var camLbl  = (kindClass === 'cam-surv') ? 'SURVEILLANCE FEED' : 'TRAFFIC CAM FEED';
+  var radius1 = isCam ? 0.0015 : 0.0005;
+  return fetchMapillarySnapshot(lat, lon, radius1).then(function(thumb) {
+    if (thumb) {
+      return { url: thumb,
+        sourceLabel: isCam ? camLbl : 'STREET VIEW',
+        attribution: 'Photo \u00A9 Mapillary' };
+    }
+    if (isCam) {
+      // Second pass at ~330m before giving up on Mapillary
+      return fetchMapillarySnapshot(lat, lon, 0.003).then(function(thumb2) {
+        if (thumb2) {
+          return { url: thumb2,
+            sourceLabel: camLbl,
+            attribution: 'Photo \u00A9 Mapillary' };
+        }
+        return { url: satelliteTileURL(lat, lon, 18),
+          sourceLabel: 'AERIAL (camera feed unavailable)',
+          attribution: 'Aerial \u00A9 Esri' };
+      });
+    }
     return { url: satelliteTileURL(lat, lon, 18),
-      sourceLabel: 'AERIAL (no street coverage)', attribution: 'Aerial \u00A9 Esri' };
+      sourceLabel: 'AERIAL (no street coverage)',
+      attribution: 'Aerial \u00A9 Esri' };
   });
 }
 
@@ -1070,6 +1837,17 @@ function Agent(id, type, lat, lon, pt) {
   this.currentWayId = null;  // OSM way agent is currently following
   this.lastTurnTime = 0;
   this.pauseUntil   = 0;
+  // Bearing-flip detector state (see OSCILLATION SUPPRESSION section)
+  this._lastBearing = null;
+  this._flipCount   = 0;
+  this._commitUntil = 0;
+  // Forward-jump consecutive counter — reset on legitimate movement progress
+  this._jumpCount   = 0;
+  // Per-suspect FOV flag: { [bgId]: true } when this agent has the bg in cone.
+  // Refreshed each tick by checkDetection. handleOscillation reads this.
+  this._inFovOf     = {};
+  // Brute-force backstop reference (lazy-init in checkStuckAgents)
+  this._stuckRef    = null;
   this.targetNode   = this._pickTarget();
 }
 
@@ -1261,7 +2039,7 @@ function loadRoadNetwork() {
     var nodes = (data.elements || []).filter(function(el) { return el.type === 'node'; })
       .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
     placeCameras(nodes, 'traffic');
-    addAlert('info', 'Traffic cameras online: ' + nodes.length + ' signalised intersections.');
+    // Sensor defaults to OFF; alert fires only when the user toggles it on.
   }).catch(function(e) {
     addAlert('warn', 'Traffic signals fetch failed — no cameras placed.');
     console.warn('Traffic signals fetch failed:', e);
@@ -1273,7 +2051,7 @@ function loadRoadNetwork() {
       .map(function(el) { return { id: el.id, lat: el.lat, lon: el.lon }; });
     if (nodes.length) {
       placeCameras(nodes, 'surveillance');
-      addAlert('info', 'Public surveillance cameras online: ' + nodes.length + ' nodes (OSM).');
+      // Sensor defaults to OFF; alert fires only when the user toggles it on.
     }
   }).catch(function(e) {
     console.warn('Surveillance fetch failed:', e);
@@ -1320,17 +2098,42 @@ function stopMovement() {
 
 function tick() {
   agents.forEach(function(a) { moveAgent(a); });
-  if (badGuy && badGuy.active) badGuy.move();
+  // Phase 2: iterate all active incidents
+  badGuys.forEach(function(bg) {
+    if (bg.active && bg.maxSpeed > 0) bg.move();
+    checkIncidentArrival(bg);
+    checkIncidentClear(bg);
+    // Phase 4: keep the search marker positioned and visible based on divergence
+    if (bg.searchMarker) {
+      bg.searchMarker.setLngLat([bg.searchLon, bg.searchLat]);
+      var divergence = haversineM(bg.lat, bg.lon, bg.searchLat, bg.searchLon);
+      var el = bg.searchMarker.getElement();
+      if (el) el.style.opacity = (divergence < 20) ? '0.25' : '1';
+    }
+  });
+  // Oscillation suppression + brute-force unstick + tasking persistence —
+  // every 4 ticks (2s). See OSCILLATION SUPPRESSION block below.
+  if (tickCount % 4 === 0) {
+    checkStuckAgents();
+    ensureFullTasking();
+  }
   tickCount++;
-  if (tickCount % 2 === 0) { updateFOV(); updateCameraFOV(); }  // every other tick for performance
+  updateFOV();
+  updateCameraFOV();
   checkDetection();
   checkCameraDetection();
-  checkCapture();
 }
 
 function moveAgent(agent) {
-  // Pursuit mode: 50% speed boost
-  var speedMult = (agent.status === 'pursuing') ? 1.5 : 1.0;
+  // Observing agents are stationary by design — keep their FOV active but
+  // don't try to move them. They still produce CV detections via checkDetection.
+  if (agent.status === 'observing') {
+    agent.updateMarker();
+    return;
+  }
+  // Pursuit mode: per-type speed multiplier (cars currently at 2.86x = +30%
+  // above the previous flat 2.2x, others unchanged). Read from AGENT_CONFIG.
+  var speedMult = (agent.status === 'pursuing') ? (agent.cfg.pursuitMult || 2.2) : 1.0;
   var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
@@ -1342,6 +2145,23 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
+  // Pursuit hold: stop moving once the agent is at the scene. Reference is the
+  // suspect's TRUE position (holdTgt.lat/lon), not searchPos — searchPos can be
+  // stale between detections, and using it would lock the agent onto a stale
+  // point, then yank it elsewhere when searchPos updates → back-and-forth
+  // oscillation. A unit within 30m of a suspect would see them with its own
+  // eyes regardless of detection state, so true-position is the right reference.
+  // Also aligns with the arrival freeze in checkIncidentArrival, which already
+  // measures distance to bg.lat/lon.
+  if (agent.status === 'pursuing' && agent.taskedTo) {
+    var holdTgt = targetFor(agent);
+    if (holdTgt && holdTgt.active) {
+      if (haversineM(agent.lat, agent.lon, holdTgt.lat, holdTgt.lon) < 30) {
+        agent.updateMarker && agent.updateMarker();
+        return;
+      }
+    }
+  }
   // Skip intersection pause when pursuing — police don't stop at red lights in pursuit
   if (agent.status !== 'pursuing' && agent.pauseUntil && Date.now() < agent.pauseUntil) {
     if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
@@ -1356,7 +2176,7 @@ function moveRoadAgent(agent, remainDist) {
   for (var h = 0; h < MAX_HOPS && remainDist > 0.5; h++) {
 
     if (!agent.targetNode || !roadGraph.nodes[agent.targetNode]) {
-      agent.targetNode = agent._pickTarget();
+      agent.targetNode = pickWithFlipGuard(agent, function() { return agent._pickTarget(); });
       if (!agent.targetNode) break;
     }
 
@@ -1379,7 +2199,9 @@ function moveRoadAgent(agent, remainDist) {
         agent.currentWayId = edgeInfo2.wayId || agent.currentWayId;
       }
       agent.pauseUntil  = Date.now() + 3000;
-      agent.targetNode  = agent.status==='pursuing' ? agent._pickPursuitTarget() : agent._pickTarget();
+      agent.targetNode  = pickWithFlipGuard(agent, function() {
+        return agent.status==='pursuing' ? agent._pickPursuitTarget() : agent._pickTarget();
+      });
       remainDist -= distToTarget;
       break; // pause takes effect next tick
     } else {
@@ -1393,30 +2215,37 @@ function moveRoadAgent(agent, remainDist) {
 
 // ── DRONE MOVEMENT ────────────────────────────────────────────────────────────
 function moveDrone(agent, dist) {
-  if (agent.status === 'pursuing' && badGuy && badGuy.active) {
-    // First fly to scene if still far away, then orbit
-    var droneDist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+  var tgt = targetFor(agent);
+  // Operational BBOX matches the Overpass query bounds. Used for both patrol and pursuit clamps.
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var bboxMargin = 0.0008; // ~90m buffer inside
+  if (agent.status === 'pursuing' && tgt && tgt.active) {
+    // Phase 4: drones loiter over the *search* position (last detected), not the true one.
+    var sp = searchPos(tgt);
+    var droneDist = haversineM(agent.lat, agent.lon, sp.lat, sp.lon);
     if (droneDist > 60) {
-      // Fly toward bad guy at 3x speed
-      agent.bearing = bearingDeg(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
-      var flyDist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * 3;
-      var flyRad  = agent.bearing * Math.PI / 180;
-      agent.lat += (flyDist * Math.cos(flyRad)) / 111320;
-      agent.lon += (flyDist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      // Fly toward last-known at regular pursuit speed (~1.5x base, set by moveAgent)
+      agent.bearing = bearingDeg(agent.lat, agent.lon, sp.lat, sp.lon);
+      var flyRad = agent.bearing * Math.PI / 180;
+      var newLat = agent.lat + (dist * Math.cos(flyRad)) / 111320;
+      var newLon = agent.lon + (dist * Math.sin(flyRad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+      // Defensive: keep drone inside BBOX even during pursuit
+      agent.lat = Math.max(BBOX_S + bboxMargin, Math.min(BBOX_N - bboxMargin, newLat));
+      agent.lon = Math.max(BBOX_W + bboxMargin, Math.min(BBOX_E - bboxMargin, newLon));
       agent.updateMarker();
       return;
     }
-    // Close enough — orbit tightly above bad guy
+    // Close enough to last-known — orbit there (slow ISR pace)
     if (!agent._orbitAngle) agent._orbitAngle = Math.random() * 360;
-    agent._orbitAngle = (agent._orbitAngle + 5) % 360;
+    agent._orbitAngle = (agent._orbitAngle + 2.5) % 360;
     var oRad = agent._orbitAngle * Math.PI / 180;
     var oR   = 40; // 40m orbit radius
-    var cosLat = Math.cos(badGuy.lat * Math.PI / 180);
-    agent.lat = badGuy.lat + (oR * Math.cos(oRad)) / 111320;
-    agent.lon = badGuy.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
-    agent.bearing = (agent._orbitAngle + 90) % 360; // face tangential
+    var cosLat = Math.cos(sp.lat * Math.PI / 180);
+    agent.lat = sp.lat + (oR * Math.cos(oRad)) / 111320;
+    agent.lon = sp.lon + (oR * Math.sin(oRad)) / (111320 * cosLat);
+    agent.bearing = (agent._orbitAngle + 90) % 360;
     agent.updateMarker();
-    return; // skip normal movement
+    return;
   } else {
     var distFromHome = haversineM(agent.lat, agent.lon, agent.homeLat, agent.homeLon);
     if (distFromHome > HOME_RADIUS_M * 0.9) {
@@ -1427,8 +2256,416 @@ function moveDrone(agent, dist) {
     }
   }
   var rad = agent.bearing * Math.PI / 180;
-  agent.lat += (dist * Math.cos(rad)) / 111320;
-  agent.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+  var newLat = agent.lat + (dist * Math.cos(rad)) / 111320;
+  var newLon = agent.lon + (dist * Math.sin(rad)) / (111320 * Math.cos(agent.lat * Math.PI / 180));
+  // Hard-clamp to operational BBOX so drones don't drift outside the demo area.
+  // BBOX_S/N/W/E and bboxMargin are declared at the top of moveDrone.
+  if (newLat < BBOX_S + bboxMargin || newLat > BBOX_N - bboxMargin ||
+      newLon < BBOX_W + bboxMargin || newLon > BBOX_E - bboxMargin) {
+    // Bounce off the edge: reverse bearing with small jitter, clamp position inside box
+    agent.bearing = (agent.bearing + 180 + (Math.random() * 60 - 30) + 360) % 360;
+    newLat = Math.max(BBOX_S + bboxMargin, Math.min(BBOX_N - bboxMargin, newLat));
+    newLon = Math.max(BBOX_W + bboxMargin, Math.min(BBOX_E - bboxMargin, newLon));
+  }
+  agent.lat = newLat;
+  agent.lon = newLon;
+}
+
+// ── PERSISTENCE: KEEP EVERY ACTIVE INCIDENT FULLY COVERED ────────────────────
+// Every active bg should have car + bike + officer tasked. Slots can go
+// empty when a unit gets untasked (oscillation→backfill, with no pool to
+// backfill from) or any other transient gap. This sweep runs every 2 seconds
+// and silently fills any missing slot with the closest available unit of
+// that type. Drone is excluded (per the FOV handoff design — drones detect
+// but never capture; they don't need a persistence slot).
+function ensureFullTasking() {
+  if (!scenarioOn) return;
+  badGuys.forEach(function(bg) {
+    if (!bg || !bg.active) return;
+    if (bg.incidentStatus === 'clearing') return;   // already wrapping up
+    if (!bg.taskedUnits) bg.taskedUnits = {};
+    ['car','bike','officer'].forEach(function(type) {
+      var current = bg.taskedUnits[type];
+      // Slot is covered if there's a tasked agent of the right type still
+      // bound to this bg and not captured.
+      if (current && current.status !== 'captured' &&
+          current.taskedTo === bg.id && current.type === type) {
+        return;
+      }
+      // Slot is empty — find the closest available agent of this type
+      var pool = agents.filter(function(a) {
+        return a.type === type && a.status !== 'captured' && !a.taskedTo;
+      });
+      if (!pool.length) return;
+      var best = pool[0], bestD = Infinity;
+      pool.forEach(function(a) {
+        var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+        if (d < bestD) { bestD = d; best = a; }
+      });
+      best.taskedTo     = bg.id;
+      best.status       = 'pursuing';
+      best.pauseUntil   = 0;
+      best._lastBearing = null;
+      best._flipCount   = 0;
+      best._commitUntil = 0;
+      best._jumpCount   = 0;
+      if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
+      if (best.marker && best.marker._element) {
+        best.marker._element.classList.add('agent-tasked-glow');
+      }
+      bg.taskedUnits[type] = best;
+    });
+  });
+  if (typeof renderTaskings === 'function') renderTaskings();
+}
+
+// ── FOV HANDOFF: OPPORTUNISTIC TARGET SWITCH ─────────────────────────────────
+// If a tasked unit doesn't currently see its assigned suspect but DOES see a
+// different active suspect that lacks coverage of this unit's type, switch
+// the unit to the visible target. Old slot gets refilled by ensureFullTasking
+// on the next sweep (≤2 seconds). Realistic ("don't ignore the criminal in
+// front of you") and helps when an initial closest-unit dispatch was a bad
+// match. Silent — no operator alert.
+function tryFovHandoff(agent) {
+  if (agent.status !== 'pursuing' || !agent.taskedTo) return;
+  if (!agent._inFovOf) return;
+  // If we already see our own target, no handoff needed
+  if (agent._inFovOf[agent.taskedTo]) return;
+  for (var i = 0; i < badGuys.length; i++) {
+    var bg = badGuys[i];
+    if (!bg || !bg.active || bg.id === agent.taskedTo) continue;
+    if (!agent._inFovOf[bg.id]) continue;
+    // Only steal if the other bg actually lacks this unit type
+    if (bg.taskedUnits && bg.taskedUnits[bg.id] === undefined) bg.taskedUnits = bg.taskedUnits || {};
+    if (bg.taskedUnits[agent.type]) continue;
+    // Switch
+    var oldBg = targetFor(agent);
+    if (oldBg && oldBg.taskedUnits) {
+      Object.keys(oldBg.taskedUnits).forEach(function(t) {
+        if (oldBg.taskedUnits[t] === agent) delete oldBg.taskedUnits[t];
+      });
+    }
+    agent.taskedTo     = bg.id;
+    agent._lastBearing = null;
+    agent._flipCount   = 0;
+    agent._commitUntil = 0;
+    agent._jumpCount   = 0;
+    agent._pursuitPath = null;
+    agent._pursuitGoal = null;
+    agent._pursuitSp   = null;
+    bg.taskedUnits[agent.type] = agent;
+    if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
+    break;   // at most one handoff per tick
+  }
+}
+
+// ── OSCILLATION SUPPRESSION + STUCK FALLBACK ─────────────────────────────────
+// Two layered, silent mechanisms.
+//
+//   1. BEARING-FLIP DETECTOR. Every target-pick decision compares the new
+//      bearing to the previous bearing. Three consecutive ~180° flips at
+//      consecutive picks means the agent is oscillating. The handler stops
+//      it: if it currently has FOV on its tasked suspect it becomes a
+//      stationary observer (still produces CV detections); otherwise it gets
+//      untasked, a fresh unit of the same type is backfilled, and the
+//      original is silently relocated to a fresh road point.
+//
+//   2. BRUTE-FORCE BACKSTOP. Per-tick position check. If an agent hasn't
+//      moved STUCK_RADIUS_M in BRUTE_FORCE_MS and isn't legitimately holding
+//      (pursuit hold within 30m, observing, captured), it's relocated
+//      silently. Catches agents that escape the bearing detector — e.g.
+//      jittering on a single edge without ever arriving at a node to trigger
+//      a pick.
+//
+// No alerts in the operator feed for any of this. Designed to be invisible
+// outside the simulation map itself.
+
+var FLIP_THRESHOLD   = 3;        // consecutive 180° flips before intervention
+var FLIP_ANGLE_DEG   = 150;      // bearing change above this counts as a flip
+var COMMIT_MS        = 3000;     // forward-only window after intervention
+var STUCK_RADIUS_M   = 8;        // movement less than this = not moving
+var BRUTE_FORCE_MS   = 10000;    // 10s without movement = brute-force relocate
+var JUMP_MAX_CONSECUTIVE = 3;    // max consecutive forward-jumps before fall-back to untask
+
+// Angular difference in degrees, 0..180.
+function angularDiff(a, b) {
+  var d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+// Find the neighbor of currentNode whose bearing best aligns with the
+// agent's last bearing — i.e., the most "forward" continuation. Used inside
+// the commit window when the picker would force a 180° flip. Returns null
+// if no neighbor is reasonably forward (all options would themselves flip).
+function pickForwardNeighbor(agent) {
+  if (agent._lastBearing == null) return null;
+  var node = roadGraph.nodes[agent.currentNode];
+  if (!node || !node.neighbors || !node.neighbors.length) return null;
+  var bestId = null, bestDiff = Infinity;
+  for (var i = 0; i < node.neighbors.length; i++) {
+    var nbId = node.neighbors[i];
+    var nb = roadGraph.nodes[nbId];
+    if (!nb) continue;
+    var b = bearingDeg(node.lat, node.lon, nb.lat, nb.lon);
+    var diff = angularDiff(b, agent._lastBearing);
+    if (diff < bestDiff) { bestDiff = diff; bestId = nbId; }
+  }
+  return bestDiff <= FLIP_ANGLE_DEG ? bestId : null;
+}
+
+// Wrap any target-pick call with flip detection. Returns the chosen target,
+// possibly substituted with a forward-continuation neighbor during the
+// commit window. Increments _flipCount on each flip; when threshold is hit,
+// calls handleOscillation. Returns null if the handler changed agent state
+// (status/position) so the caller knows to abandon this pick.
+function pickWithFlipGuard(agent, picker) {
+  var prevStatus = agent.status;
+  var prevLat    = agent.lat;
+  var prevTask   = agent.taskedTo;
+  var candidate  = picker();
+  if (!candidate || !roadGraph.nodes[candidate]) return candidate;
+  var c  = roadGraph.nodes[agent.currentNode];
+  var tn = roadGraph.nodes[candidate];
+  if (!c || !tn) return candidate;
+  var newBearing = bearingDeg(c.lat, c.lon, tn.lat, tn.lon);
+  var now = Date.now();
+  if (agent._lastBearing != null) {
+    var isFlip = angularDiff(newBearing, agent._lastBearing) > FLIP_ANGLE_DEG;
+    // Inside commit window: try to substitute a forward neighbor for a flip
+    if (isFlip && now < agent._commitUntil) {
+      var alt = pickForwardNeighbor(agent);
+      if (alt && alt !== candidate) {
+        candidate = alt;
+        var altN = roadGraph.nodes[alt];
+        newBearing = bearingDeg(c.lat, c.lon, altN.lat, altN.lon);
+        isFlip = angularDiff(newBearing, agent._lastBearing) > FLIP_ANGLE_DEG;
+      }
+    }
+    if (isFlip) {
+      agent._flipCount = (agent._flipCount || 0) + 1;
+      if (agent._flipCount >= FLIP_THRESHOLD) {
+        handleOscillation(agent);
+        agent._flipCount = 0;
+        // If the handler relocated/untasked, abandon the candidate
+        if (agent.lat !== prevLat || agent.status !== prevStatus ||
+            agent.taskedTo !== prevTask) {
+          return null;
+        }
+      }
+    } else {
+      agent._flipCount = 0;
+    }
+  }
+  agent._lastBearing = newBearing;
+  return candidate;
+}
+
+// Silent teleport: agent jumps to a fresh road point, all path/pursuit
+// state cleared. No alert. Used by both layers of intervention.
+function relocateAgentSilent(a) {
+  var pt = _ic_randomMapPoint();
+  if (a.type === 'drone') {
+    a.lat = pt.lat;
+    a.lon = pt.lng;
+  } else {
+    a.lat          = pt.lat;
+    a.lon          = pt.lng;
+    a.currentNode  = nearestNode(a.lat, a.lon);
+    a.prevNode     = null;
+    a.targetNode   = null;
+    a._pursuitPath = null;
+    a._pursuitGoal = null;
+    a._pursuitSp   = null;
+    a.pauseUntil   = 0;
+  }
+  a._lastBearing = null;
+  a._flipCount   = 0;
+  a._commitUntil = 0;
+  a._jumpCount   = 0;
+  a._stuckRef    = null;
+  if (a.marker) a.marker.setLngLat([a.lon, a.lat]);
+  if (a.updateMarker) a.updateMarker();
+}
+
+// Untask agent from current pursuit, dispatch the closest other available
+// unit of the same type to backfill the slot, then silently relocate the
+// original. All silent — no alerts.
+function untaskBackfillRelocate(agent) {
+  var oldBg   = targetFor(agent);
+  var oldBgId = agent.taskedTo;
+  var oldType = agent.type;
+  if (oldBg && oldBg.taskedUnits) {
+    Object.keys(oldBg.taskedUnits).forEach(function(t) {
+      if (oldBg.taskedUnits[t] === agent) delete oldBg.taskedUnits[t];
+    });
+  }
+  agent.taskedTo = null;
+  agent.status   = 'patrol';
+  if (agent.marker && agent.marker._element) {
+    agent.marker._element.classList.remove('agent-tasked-glow');
+  }
+  // Backfill another unit of the same type if available
+  if (oldBg && oldBg.active && !oldBg.taskedUnits[oldType]) {
+    var pool = agents.filter(function(x) {
+      return x.type === oldType && x.status !== 'captured' && !x.taskedTo && x !== agent;
+    });
+    if (pool.length) {
+      var best = pool[0], bestD = Infinity;
+      pool.forEach(function(x) {
+        var dx = haversineM(x.lat, x.lon, oldBg.lat, oldBg.lon);
+        if (dx < bestD) { bestD = dx; best = x; }
+      });
+      best.taskedTo     = oldBgId;
+      best.status       = 'pursuing';
+      best.pauseUntil   = 0;
+      best._lastBearing = null;
+      best._flipCount   = 0;
+      best._commitUntil = 0;
+      best._jumpCount   = 0;
+      if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
+      if (best.marker && best.marker._element) {
+        best.marker._element.classList.add('agent-tasked-glow');
+      }
+      oldBg.taskedUnits[oldType] = best;
+    }
+  }
+  relocateAgentSilent(agent);
+  if (typeof renderTaskings === 'function') renderTaskings();
+}
+
+// Directed silent teleport along the agent's traversable road pool toward
+// its tasked suspect. Used by handleOscillation when an agent is oscillating
+// without FOV — instead of giving up the pursuit (untask+backfill), shove the
+// agent past the apparent path block by half the remaining distance to the
+// target. Preserves taskedTo, status='pursuing', and all incident binding.
+// Returns true if a viable jump node was found and the agent was moved.
+function jumpTowardTarget(agent) {
+  if (!agent.taskedTo) return false;
+  var bg = targetFor(agent);
+  if (!bg || !bg.active) return false;
+  var pool = (roadGraph.nodesByType && roadGraph.nodesByType[agent.type])
+           || roadGraph.nodeIds;
+  if (!pool || !pool.length) return false;
+  var distNow = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
+  if (distNow < 30) return false;   // already on top of the suspect
+  // Aim for a node ~half the remaining distance closer to bg.
+  var targetCloser = distNow * 0.5;
+  var bestNode = null, bestScore = Infinity;
+  for (var i = 0; i < pool.length; i++) {
+    var n = roadGraph.nodes[pool[i]];
+    if (!n) continue;
+    var dToBg      = haversineM(n.lat, n.lon, bg.lat, bg.lon);
+    var dFromAgent = haversineM(n.lat, n.lon, agent.lat, agent.lon);
+    // Must actually be closer to bg (not just sideways)
+    if (dToBg >= distNow * 0.85) continue;
+    // Don't allow wild teleports — cap jump size at 85% of remaining distance
+    if (dFromAgent > distNow * 0.85) continue;
+    // Prefer nodes near (distNow - targetCloser) from bg AND around
+    // targetCloser away from agent. The Math.abs balances both constraints.
+    var score = Math.abs(dToBg - (distNow - targetCloser)) +
+                Math.abs(dFromAgent - targetCloser) * 0.5;
+    if (score < bestScore) { bestScore = score; bestNode = pool[i]; }
+  }
+  if (!bestNode) return false;
+  var node = roadGraph.nodes[bestNode];
+  agent.lat          = node.lat;
+  agent.lon          = node.lon;
+  agent.currentNode  = bestNode;
+  agent.prevNode     = null;
+  agent.targetNode   = null;
+  agent._pursuitPath = null;
+  agent._pursuitGoal = null;
+  agent._pursuitSp   = null;
+  agent._lastBearing = null;
+  agent._flipCount   = 0;
+  agent._commitUntil = 0;
+  agent._stuckRef    = null;
+  // Pick a fresh pursuit target from the new position
+  agent.targetNode = agent._pickPursuitTarget();
+  if (agent.marker) agent.marker.setLngLat([agent.lon, agent.lat]);
+  if (agent.updateMarker) agent.updateMarker();
+  return true;
+}
+
+// Triggered when the bearing-flip detector hits FLIP_THRESHOLD. Branches:
+//   FOV on tasked suspect → become stationary 'observing' (no jump, no
+//     relocation; the unit's CV detection is the simulation's actual goal).
+//   No FOV, still tasked → try jumpTowardTarget first (preserves pursuit by
+//     teleporting past the path block). After JUMP_MAX_CONSECUTIVE failed
+//     attempts, fall back to untaskBackfillRelocate so we don't loop forever.
+//   Patrolling → silent random relocate.
+// Drones are excluded from clearing/capture independently — that's enforced
+// in checkIncidentArrival, which never lists drone among the close-trigger
+// unit types. This handler treats drones the same as ground units for
+// oscillation suppression (they can also get stuck and benefit from a jump
+// or relocation).
+function handleOscillation(agent) {
+  agent._commitUntil = Date.now() + COMMIT_MS;
+  var wasPursuing = (agent.status === 'pursuing' && agent.taskedTo);
+  var hasFov      = wasPursuing && agent._inFovOf && agent._inFovOf[agent.taskedTo];
+  if (wasPursuing && hasFov) {
+    // FOV-observer: freeze in place, no jump, no relocate
+    agent.status     = 'observing';
+    agent.speed      = 0;
+    agent.targetNode = null;
+    agent._jumpCount = 0;
+  } else if (wasPursuing) {
+    // No FOV — try jumping forward toward target. After JUMP_MAX_CONSECUTIVE
+    // jumps without breaking out, give up and untask+backfill.
+    agent._jumpCount = (agent._jumpCount || 0) + 1;
+    if (agent._jumpCount <= JUMP_MAX_CONSECUTIVE && jumpTowardTarget(agent)) {
+      // jumped — agent retains taskedTo and continues pursuing from new spot
+    } else {
+      agent._jumpCount = 0;
+      untaskBackfillRelocate(agent);
+    }
+  } else {
+    // Patrol oscillation — silent random relocate
+    relocateAgentSilent(agent);
+  }
+}
+
+// Per-tick brute-force backstop + observer-recovery. Runs every 4 ticks (2s).
+function checkStuckAgents() {
+  if (!scenarioOn) return;
+  var now = Date.now();
+  agents.forEach(function(a) {
+    if (!a || !a.lat || !a.lon) return;
+    if (a.status === 'captured') return;
+    // Observer recovery: if we lost FOV on the tasked suspect, the unit is
+    // no longer contributing — untask, backfill, relocate.
+    if (a.status === 'observing') {
+      var hasFov = a._inFovOf && a._inFovOf[a.taskedTo];
+      if (!hasFov) untaskBackfillRelocate(a);
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    if (!a._stuckRef) {
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    var d = haversineM(a.lat, a.lon, a._stuckRef.lat, a._stuckRef.lon);
+    if (d > STUCK_RADIUS_M) {
+      // Moved enough — reset stuck reference and the consecutive-jump counter
+      a._stuckRef  = { lat: a.lat, lon: a.lon, since: now };
+      a._jumpCount = 0;
+      return;
+    }
+    // Pursuit hold (within 30m of suspect) is a legitimate stop
+    if (a.status === 'pursuing' && a.taskedTo) {
+      var bg = targetFor(a);
+      if (bg && bg.active && haversineM(a.lat, a.lon, bg.lat, bg.lon) < 30) {
+        a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+        return;
+      }
+    }
+    // Truly stuck — silent intervention
+    if (now - a._stuckRef.since > BRUTE_FORCE_MS) {
+      if (a.status === 'pursuing' && a.taskedTo) untaskBackfillRelocate(a);
+      else                                       relocateAgentSilent(a);
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+    }
+  });
 }
 
 // ── AUTO-START ────────────────────────────────────────────────────────────────
@@ -1437,18 +2674,15 @@ function autoStart() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-reset').disabled = false;
   document.getElementById('btn-deploy').disabled = false;
-  document.getElementById('c-dr').textContent = '3/3';
-  document.getElementById('c-ca').textContent = '10/10';
-  document.getElementById('c-bi').textContent = '10/10';
-  document.getElementById('c-of').textContent = '10/10';
   setPill('scan', 'Scanning');
   doPlaceAgents();
+  updateAssetCounts();  // Phase 2: dynamic counters reflect tasked state
   startMovement();
   // Place mics after a delay so async Overpass camera fetches have time to land
   // — collision avoidance needs to see camera positions to push mics away from them
   setTimeout(function() {
     placeMics();
-    document.getElementById('c-mic').textContent = mics.length + '/' + mics.length;
+    updateAssetCounts();
   }, 3000);
 }
 
@@ -1483,7 +2717,53 @@ BadGuy.prototype.addToMap = function() {
   this.marker = new maplibregl.Marker({
     element: el, rotationAlignment:'map', pitchAlignment:'map'
   }).setLngLat([this.lon, this.lat]).addTo(map);
+  // Hover popup with incident info (dark theme via bg-popup className)
+  var self = this;
+  el.addEventListener('mouseenter', function() {
+    if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
+    sensorPopup = new maplibregl.Popup({className:'bg-popup', closeButton:false, closeOnClick:false, offset:14, maxWidth:'260px'})
+      .setLngLat([self.lon, self.lat])
+      .setHTML(badGuyPopupHTML(self))
+      .addTo(map);
+  });
+  el.addEventListener('mouseleave', function() {
+    if (sensorPopup) { sensorPopup.remove(); sensorPopup = null; }
+  });
 };
+
+function badGuyPopupHTML(bg) {
+  var meta = bg.incidentMeta || {};
+  var statusMap = {
+    'active':   'Active — fleeing',
+    'tasked':   'Units en route',
+    'arrived':  'On scene — awaiting vehicle',
+    'clearing': 'Containment — clearing'
+  };
+  var statusText = statusMap[bg.incidentStatus] || 'Active';
+  var elapsed = Math.round(((bg.timerEnd || Date.now()) - bg.timerStart) / 1000);
+  var mm = Math.floor(elapsed/60), ss = elapsed%60;
+  var timer = (mm<10?'0':'') + mm + ':' + (ss<10?'0':'') + ss;
+  var color = meta.color || '';
+  var desc;
+  if (bg.type === 'person') {
+    var apparel = meta.apparel || 'clothing';
+    desc = color ? ('Suspect in ' + color + ' ' + apparel) : 'Suspect on foot';
+  } else {
+    var typeWord = (bg.type === 'car') ? 'Vehicle' : (bg.type === 'bike' ? 'Bike' : bg.type);
+    desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
+  }
+  var taskedList = [];
+  ['car','bike','officer','drone'].forEach(function(t){
+    var a = bg.taskedUnits && bg.taskedUnits[t];
+    if (a) taskedList.push(a.cfg.label + ' ' + a.id);
+  });
+  return '<div style="font:600 10px sans-serif;letter-spacing:.6px;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Incident #' + (bg.id||'?') + '</div>' +
+    '<div style="font:600 12px sans-serif;color:#ffffff;margin-bottom:3px;">' + (meta.label || 'Suspect') + '</div>' +
+    '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + desc + '</div>' +
+    '<div style="font:10px sans-serif;color:#7dd3fc;margin-bottom:3px;">' + statusText + '</div>' +
+    '<div style="font:10px \'JetBrains Mono\',monospace;color:#f59e0b;margin-bottom:3px;">Response time: ' + timer + '</div>' +
+    (taskedList.length ? '<div style="font:10px sans-serif;color:#94a3b8;">Tasked: ' + taskedList.join(', ') + '</div>' : '');
+}
 
 BadGuy.prototype.updateMarker = function() {
   if (this.marker) this.marker.setLngLat([this.lon, this.lat]);
@@ -1493,25 +2773,121 @@ BadGuy.prototype.remove = function() {
   if (this.marker) { this.marker.remove(); this.marker = null; }
 };
 
+// Phase 2.1: pick next road node to flee toward — prefers continuing direction.
+// Uses highway filter appropriate to bad guy type (car → driving roads, person/bike → paths).
+BadGuy.prototype._pickTarget = function() {
+  if (!roadNetworkReady) return null;
+  var n = roadGraph.nodes[this.currentNode];
+  if (!n || !n.neighbors.length) return this.currentNode;
+  var self = this;
+  // Match agent type to bad guy type so bikes don't use footways/pedestrian-only paths
+  var agentType = (this.type === 'car') ? 'car' : (this.type === 'bike' ? 'bike' : 'officer');
+  var hwFilter = ALLOWED_HIGHWAYS[agentType];
+  // Phase 4: keep suspect inside the operational area by rejecting edge-adjacent targets
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var edgeMargin = 0.0015; // ~165m soft buffer — bad guy turns around well before the edge
+  function nodeInBounds(nb) {
+    return nb.lat > BBOX_S + edgeMargin && nb.lat < BBOX_N - edgeMargin
+        && nb.lon > BBOX_W + edgeMargin && nb.lon < BBOX_E - edgeMargin;
+  }
+  var valid = n.neighbors.filter(function(nid) {
+    if (nid == self.prevNode) return false;
+    var nb = roadGraph.nodes[nid];
+    if (!nb) return false;
+    if (!nodeInBounds(nb)) return false;
+    if (hwFilter && n.neighborHW && n.neighborHW[nid]) {
+      var info = n.neighborHW[nid];
+      var hw = info && info.hw ? info.hw : info;
+      if (!hwFilter.test(hw)) return false;
+    }
+    return true;
+  });
+  // Dead end (or only edge-adjacent neighbors left): relax the in-bounds filter
+  if (!valid.length) {
+    valid = n.neighbors.filter(function(nid) {
+      if (nid == self.prevNode) return false;
+      var nb = roadGraph.nodes[nid];
+      if (!nb) return false;
+      if (hwFilter && n.neighborHW && n.neighborHW[nid]) {
+        var info = n.neighborHW[nid];
+        var hw = info && info.hw ? info.hw : info;
+        if (!hwFilter.test(hw)) return false;
+      }
+      return true;
+    });
+  }
+  if (!valid.length) valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
+  if (!valid.length) return this.currentNode;
+  if (valid.length === 1) return valid[0];
+  // Prefer continuing in current approach direction (smallest angle delta)
+  var approach = this.bearing;
+  if (this.prevNode && roadGraph.nodes[this.prevNode]) {
+    var prev = roadGraph.nodes[this.prevNode];
+    approach = bearingDeg(prev.lat, prev.lon, this.lat, this.lon);
+  }
+  var bestNid = valid[0], bestDiff = 360;
+  valid.forEach(function(nid) {
+    var nb = roadGraph.nodes[nid];
+    var brg = bearingDeg(self.lat, self.lon, nb.lat, nb.lon);
+    var diff = Math.abs(((brg - approach) + 540) % 360 - 180);
+    if (diff < bestDiff) { bestDiff = diff; bestNid = nid; }
+  });
+  return bestNid;
+};
+
 BadGuy.prototype.move = function() {
   if (this.speed <= 0) return;
-  var dist = (this.speed / 3.6) * (TICK_MS / 1000);
-  var rad  = this.bearing * Math.PI / 180;
-  this.lat += (dist * Math.cos(rad)) / 111320;
-  this.lon += (dist * Math.sin(rad)) / (111320 * Math.cos(this.lat * Math.PI / 180));
-  // Disappear if off operational bounds
-  if (this.lon < -71.180 || this.lon > -70.952 || this.lat < 42.278 || this.lat > 42.432) {
-    clearIncident();
-    addAlert('warn', 'Incident left operational area. Deploy new incident when ready.');
-    return;
+  if (!roadNetworkReady) return; // wait for road graph; movement starts on next tick once ready
+  // Lazy-init graph tracking on first move (placeBadGuy may have set these already)
+  if (!this.currentNode) {
+    this.currentNode = nearestNode(this.lat, this.lon);
+    this.prevNode = null;
+    this.targetNode = null;
   }
+  if (!this.targetNode || !roadGraph.nodes[this.targetNode]) {
+    this.targetNode = this._pickTarget();
+  }
+  if (!this.targetNode) return;
+  // Advance along the segment, hopping nodes if needed within one tick
+  var remain = (this.speed / 3.6) * (TICK_MS / 1000);
+  var MAX_HOPS = 4;
+  for (var h = 0; h < MAX_HOPS && remain > 0.5; h++) {
+    var tgt = roadGraph.nodes[this.targetNode];
+    if (!tgt) break;
+    var distToTgt = haversineM(this.lat, this.lon, tgt.lat, tgt.lon);
+    if (distToTgt > 1) {
+      this.bearing = bearingDeg(this.lat, this.lon, tgt.lat, tgt.lon);
+    }
+    if (remain >= distToTgt) {
+      // Snap to node, advance
+      this.lat = tgt.lat; this.lon = tgt.lon;
+      this.prevNode = this.currentNode;
+      this.currentNode = this.targetNode;
+      this.targetNode = this._pickTarget();
+      remain -= distToTgt;
+      if (!this.targetNode) break;
+    } else {
+      var ratio = remain / Math.max(distToTgt, 1);
+      this.lat += (tgt.lat - this.lat) * ratio;
+      this.lon += (tgt.lon - this.lon) * ratio;
+      remain = 0;
+    }
+  }
+  // Phase 4: defensive bounds clamp — keeps suspect inside the operational area
+  // even if road graph traversal somehow walked past the edge filter
+  var BBOX_S = 42.338, BBOX_N = 42.373, BBOX_W = -71.090, BBOX_E = -71.042;
+  var clampMargin = 0.0005;
+  if (this.lat < BBOX_S + clampMargin) this.lat = BBOX_S + clampMargin;
+  if (this.lat > BBOX_N - clampMargin) this.lat = BBOX_N - clampMargin;
+  if (this.lon < BBOX_W + clampMargin) this.lon = BBOX_W + clampMargin;
+  if (this.lon > BBOX_E - clampMargin) this.lon = BBOX_E - clampMargin;
   this.updateMarker();
-  document.getElementById('i-loc').textContent = this.lat.toFixed(4)+', '+this.lon.toFixed(4);
 };
 
 function snapToRoad(lat, lon, type) {
   // Map bad guy type to agent type for road lookup
-  var agentType = (type === 'car') ? 'car' : 'officer'; // bike+person use officer roads
+  // Bike has its own filter (no footways/pedestrian); person uses officer (can use sidewalks)
+  var agentType = (type === 'car') ? 'car' : (type === 'bike' ? 'bike' : 'officer');
   var pool = (roadGraph.nodesByType && roadGraph.nodesByType[agentType]) || roadGraph.nodeIds || [];
   if (!pool.length) return { lat: lat, lon: lon };
   var best = null, bestD = Infinity;
@@ -1525,24 +2901,8 @@ function snapToRoad(lat, lon, type) {
 }
 
 function clearIncident() {
-  if (badGuy) { badGuy.remove(); badGuy = null; }
-  agents.forEach(function(a) { if (a.status==='pursuing') a.status='patrol'; a._hasVisual=false; });
-  cameras.forEach(function(c) { c._hasVisual = false; });
-  pursuing = { car:null, bike:null, officer:null };
-  incidentOn = false;
-  document.getElementById('bg-panel').style.display='none';
-  document.getElementById('i-type').textContent='None';
-  document.getElementById('i-type').classList.add('none');
-  document.getElementById('i-loc').textContent='--';
-  document.getElementById('i-stat').textContent='Standby';
-  document.getElementById('i-stat').classList.add('none');
-  stopTimer();
-  captureCountdown = 0;
-  clearInterval(captureTimerInt);
-  setPill('scan','Scanning');
-  stopSensorFeed();
-  clearTriangulation();
-  updateFOV();
+  // Legacy entry point — now an alias for clearAllIncidents (multi-incident aware)
+  clearAllIncidents();
 }
 
 // ── FOV POLYGON HELPERS ───────────────────────────────────────────────────────
@@ -1621,7 +2981,7 @@ function cameraFOVFeatures() {
   var feats = [];
   cameras.forEach(function(cam) {
     var isSurv = cam.subtype === 'surveillance';
-    var visible = isSurv ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
+    var visible = assetGraphics['traffic-cams'];
     if (!visible) return;
     var cfg = isSurv ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     var hot     = cam._hasVisual;
@@ -1714,7 +3074,7 @@ function placeCameras(nodes, subtype) {
   var cfg       = subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
   var label     = subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
   var kindClass = subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
-  var visKey    = subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
+  var visKey    = 'traffic-cams';
   nodes.forEach(function(n) {
     var el = document.createElement('div');
     el.className = 'cam-marker';
@@ -1724,7 +3084,7 @@ function placeCameras(nodes, subtype) {
     el.title = label + ' #' + n.id;
     var marker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([n.lon, n.lat]).addTo(map);
-    if (!assetVisibility[visKey]) el.style.display = 'none';
+    if (!assetGraphics[visKey]) el.style.display = 'none';
     var camObj = { id: n.id, lat: n.lat, lon: n.lon, marker: marker, el: el, subtype: subtype };
     attachSensorPopup(el, function() {
       return { lat: camObj.lat, lon: camObj.lon, label: label,
@@ -1736,17 +3096,16 @@ function placeCameras(nodes, subtype) {
   updateCameraCounts();
 }
 
-// Refresh the split traffic/surveillance count badges
+// Refresh the split traffic/surveillance count badges via the unified updater
+// (which respects toggle state — shows 0/0 when the sensor type is off).
 function updateCameraCounts() {
-  var t = 0, s = 0;
-  cameras.forEach(function(c) { if (c.subtype === 'surveillance') s++; else t++; });
-  var et = document.getElementById('c-cam-traf');
-  var es = document.getElementById('c-cam-surv');
-  if (et) et.textContent = t + '/' + t;
-  if (es) es.textContent = s + '/' + s;
+  updateAssetCounts();
 }
 
-// ── ACOUSTIC MIC MESH (20 mics in grid, collision-avoided from existing icons) ─
+// ── ACOUSTIC MIC MESH (4×5 grid + 7 POI hot-spots = 27 mics) ────────────────
+// Grid provides ambient coverage; POI mics (defined in POI_MICS above) fill
+// known gaps around Boston Common, Beacon Hill, Theater District, and the
+// east-side tourist corridor.
 function setupMicMeshLayer() {
   map.addSource('mic-mesh', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
   // Below the camera FOV layer so it doesn't obscure cameras
@@ -1759,6 +3118,13 @@ function setupMicMeshLayer() {
     paint:{ 'fill-color': MIC_CONFIG.color, 'fill-opacity': 0.18 } }, 'fov-cam-fill');
   map.addLayer({ id:'mic-tri-outline', type:'line', source:'mic-tri',
     paint:{ 'line-color': MIC_CONFIG.color, 'line-opacity': 0.6, 'line-width': 1.4 } }, 'fov-cam-fill');
+
+  // Phase 3: shots_fired acoustic-triangulation rays (amber dashed lines from
+  // closest mics to the triangulated origin). Populated by runShotsFiredTriangulation,
+  // cleared by clearTriangulation. Added without a 'before' arg so it renders on top.
+  map.addSource('tri-lines', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'tri-lines-layer', type:'line', source:'tri-lines',
+    paint:{ 'line-color':'#f59e0b', 'line-opacity':0.9, 'line-width':2.4, 'line-dasharray':[2, 2] } });
 }
 
 function micMeshFeatures() {
@@ -1771,7 +3137,7 @@ function micMeshFeatures() {
 function updateMicMesh() {
   var src = map.getSource('mic-mesh');
   if (!src) return;
-  src.setData({ type:'FeatureCollection', features: assetVisibility.mics ? micMeshFeatures() : [] });
+  src.setData({ type:'FeatureCollection', features: assetGraphics.mics ? micMeshFeatures() : [] });
 }
 
 // Find nearest existing icon (camera or agent) and its distance, in meters
@@ -1820,13 +3186,37 @@ function placeMics() {
       el.title = 'Mic #' + (mics.length + 1);
       var marker = new maplibregl.Marker({ element: el, anchor:'center' })
         .setLngLat([lon, lat]).addTo(map);
-      if (!assetVisibility.mics) el.style.display = 'none';
+      if (!assetGraphics.mics) el.style.display = 'none';
       mics.push({ id: mics.length + 1, lat: lat, lon: lon, marker: marker, el: el });
     }
   }
+  // POI hot-spot mics — added after the grid to fill known coverage gaps
+  // around Boston Common, Beacon Hill, the Theater District, and the
+  // east-side tourist corridor. Same visual style as grid mics; collision
+  // avoidance pushes them away from cameras/agents if needed.
+  POI_MICS.forEach(function(poi) {
+    var lat = poi.lat, lon = poi.lon;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      var probe = nearestIconDist(lat, lon);
+      if (probe.dist > COLLISION_M) break;
+      var dy = lat - probe.blocker.lat;
+      var dx = lon - probe.blocker.lon;
+      var mag = Math.sqrt(dx*dx + dy*dy) || 0.00001;
+      lat += (dy / mag) * 0.0006;
+      lon += (dx / mag) * 0.0006;
+    }
+    var el = document.createElement('div');
+    el.style.cssText = 'cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));';
+    el.innerHTML = makeMicSVG(MIC_CONFIG.color);
+    var idx = mics.length + 1;
+    el.title = 'Mic #' + idx + ' — ' + poi.name;
+    var marker = new maplibregl.Marker({ element: el, anchor:'center' })
+      .setLngLat([lon, lat]).addTo(map);
+    if (!assetGraphics.mics) el.style.display = 'none';
+    mics.push({ id: idx, lat: lat, lon: lon, marker: marker, el: el, poi: poi.name });
+  });
   updateMicMesh();
-  addAlert('info', 'Acoustic mesh online: ' + mics.length + ' microphones, ' +
-    MIC_CONFIG.radius + 'm listening radius each.');
+  // Mics default to OFF; alert fires only when the user toggles them on.
 }
 
 // ── UNIFIED ASSET LAYER TOGGLES ──────────────────────────────────────────────
@@ -1835,12 +3225,32 @@ function placeMics() {
 // assetVisibility. Click → toggleAssetType → applyAssetVisibility re-syncs icons,
 // FOV layers, and badge visual state in one place.
 function toggleAssetType(type) {
+  var sensorState = getSensorState(type);
+  if (sensorState !== null) {
+    // 3-state cycle for sensors: off → full → silent → off
+    var next = sensorState === 'off'    ? 'full'
+             : sensorState === 'full'   ? 'silent'
+             : 'off';
+    setSensorState(type, next);
+    applyAssetVisibility();
+    var sensorLabels = { 'traffic-cams': 'Cameras', 'mics': 'Acoustic mesh' };
+    var count = (type === 'mics') ? mics.length : cameras.length;
+    if (count === 0 && next !== 'off') {
+      addAlert('warn', sensorLabels[type] + ' enabled — no data loaded yet.');
+    } else if (count > 0) {
+      if (next === 'full')        addAlert('info', sensorLabels[type] + ' online — ' + count + ' active, overlay visible.');
+      else if (next === 'silent') addAlert('info', sensorLabels[type] + ' silent ops — ' + count + ' active, overlay hidden.');
+      else                        addAlert('info', sensorLabels[type] + ' offline.');
+    }
+    return;
+  }
+  // Binary toggle for agent types (drones / vehicles / bikes / officers)
   assetVisibility[type] = !assetVisibility[type];
   applyAssetVisibility();
 }
 
 function applyAssetVisibility() {
-  // Agent markers
+  // Agent markers (binary, follow assetVisibility)
   var agentMap = { drone:'drones', car:'vehicles', bike:'bikes', officer:'officers' };
   agents.forEach(function(a) {
     var visible = assetVisibility[agentMap[a.type]] !== false;
@@ -1848,23 +3258,26 @@ function applyAssetVisibility() {
       a.marker._element.style.display = visible ? '' : 'none';
     }
   });
-  // Camera markers (split by subtype)
+  // Camera markers — show only when graphics are on (silent state hides icons)
   cameras.forEach(function(c) {
-    var visible = c.subtype === 'surveillance' ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
-    c.el.style.display = visible ? '' : 'none';
+    c.el.style.display = assetGraphics['traffic-cams'] ? '' : 'none';
   });
-  // Mic markers
+  // Mic markers — same rule
   mics.forEach(function(m) {
-    m.el.style.display = assetVisibility.mics ? '' : 'none';
+    m.el.style.display = assetGraphics.mics ? '' : 'none';
   });
-  // FOV / mesh layers re-render
+  // FOV / mesh layers re-render (they read assetGraphics internally)
   updateFOV();
   updateCameraFOV();
   updateMicMesh();
-  // Badge UI state
+  // Badge UI: off (strikethrough+grey), silent (dashed+amber), full (default+green)
   document.querySelectorAll('.abadge[data-toggle]').forEach(function(b) {
-    b.classList.toggle('off', !assetVisibility[b.dataset.toggle]);
+    var t  = b.dataset.toggle;
+    var st = getSensorState(t);
+    b.classList.toggle('off',    st !== null ? st === 'off'    : !assetVisibility[t]);
+    b.classList.toggle('silent', st === 'silent');
   });
+  updateAssetCounts();
 }
 
 // ── GUNSHOT EVENT + TRIANGULATION + ACOUSTIC DISPATCH ────────────────────────
@@ -1873,6 +3286,138 @@ function applyAssetVisibility() {
 // Triangulation = which mics heard it; the viz pins to the shot's lat/lon
 // and persists until capture (cleared via clearIncident).
 var gunshotMarker = null;
+
+// ── Phase 3: shots_fired acoustic triangulation (auto, no human witness) ──
+// Distinct from the manual "Fire Weapon" path (fireGunshot below). When the
+// 911 call roller hits 'shots_fired' AND mic coverage is good enough, we run
+// a 5s viz: 3 staggered amber rays in (300/800/1300 ms) → red crosshair at
+// 1.6s → hold until 6.6s → spawn the suspect at the triangulated origin with
+// stripped metadata (no color/apparel — acoustic-only intel).
+var TRI_ACTIVE = false;
+var triCrosshairMarker = null;
+var triTimeouts = [];           // pending stagger timers — cancelled on Reset
+
+// 400m is a stricter "triangulation quality" threshold (vs the 700m audibility
+// radius). Three close mics give enough geometric diversity to localize.
+var TRI_QUALITY_RADIUS = 400;
+
+function canTriangulate(lat, lon) {
+  if (!assetVisibility.mics) return false;
+  if (!mics.length) return false;
+  var n = 0;
+  for (var i = 0; i < mics.length; i++) {
+    if (haversineM(mics[i].lat, mics[i].lon, lat, lon) <= TRI_QUALITY_RADIUS) n++;
+    if (n >= 3) return true;
+  }
+  return false;
+}
+
+function _triClosestMics(lat, lon, k) {
+  return mics
+    .map(function(m){ return { mic:m, dist: haversineM(m.lat, m.lon, lat, lon) }; })
+    .sort(function(a,b){ return a.dist - b.dist; })
+    .slice(0, k);
+}
+
+function _triLineFeature(mic, lat, lon) {
+  return { type:'Feature', geometry:{ type:'LineString',
+    coordinates: [[mic.lon, mic.lat], [lon, lat]] }, properties:{} };
+}
+
+function runShotsFiredTriangulation(lat, lon, opts) {
+  // opts.onComplete(lat, lon) fires at t=6600 ms, immediately after the viz clears.
+  TRI_ACTIVE = true;
+  var closest = _triClosestMics(lat, lon, 3);
+  var feats   = [];
+  var src     = map.getSource('tri-lines');
+
+  // Per-mic ray stagger: 300 / 800 / 1300 ms
+  var stagger = [300, 800, 1300];
+  closest.forEach(function(h, i) {
+    var t = setTimeout(function() {
+      feats.push(_triLineFeature(h.mic, lat, lon));
+      if (src) src.setData({ type:'FeatureCollection', features: feats });
+      addAlert('warn', '🎤 <strong>Mic #' + h.mic.id +
+        '</strong> — acoustic event detected (' + Math.round(h.dist) + 'm).');
+    }, stagger[i] || 0);
+    triTimeouts.push(t);
+  });
+
+  // Red pulsing crosshair drops at t=1.6s
+  triTimeouts.push(setTimeout(function() {
+    if (triCrosshairMarker) triCrosshairMarker.remove();
+    var el = document.createElement('div');
+    el.className = 'tri-crosshair';
+    el.innerHTML = '<div class="ring"></div><div class="dot"></div>';
+    el.title = 'Triangulated gunshot origin';
+    triCrosshairMarker = new maplibregl.Marker({ element: el, anchor:'center' })
+      .setLngLat([lon, lat]).addTo(map);
+    addAlert('bad', '🎯 <strong>Acoustic triangulation locked</strong> — ' +
+      closest.length + ' mics, origin near ' + (_ic_addressAt(lat, lon) || 'unresolved address') + '.');
+  }, 1600));
+
+  // Hold viz until t=6.6s, then clear Phase 3 viz only and spawn suspect.
+  // (We don't call full clearTriangulation here — that would also wipe any
+  // manual-fire-weapon gunshot viz the operator may have running.)
+  triTimeouts.push(setTimeout(function() {
+    _clearTriPhase3Viz();
+    TRI_ACTIVE = false;
+    if (opts && typeof opts.onComplete === 'function') {
+      opts.onComplete(lat, lon);
+    }
+  }, 6600));
+}
+
+// Phase 3 viz cleanup only — does NOT touch the manual-fire-weapon gunshotMarker
+// or the mic-tri (700m hearing-mic) overlay. Called at the end of the 6.6s timer
+// and (via clearTriangulation) on Reset.
+function _clearTriPhase3Viz() {
+  var ts = map.getSource('tri-lines');
+  if (ts) ts.setData({ type:'FeatureCollection', features: [] });
+  if (triCrosshairMarker) { triCrosshairMarker.remove(); triCrosshairMarker = null; }
+  triTimeouts.forEach(function(t) { clearTimeout(t); });
+  triTimeouts = [];
+}
+
+function spawnAcousticSuspect(lat, lon) {
+  // Random type, equal weight. NO description metadata — acoustic only.
+  var types = ['car','bike','person'];
+  var t     = types[Math.floor(Math.random() * types.length)];
+  placeBadGuy(lat, lon, t);   // does snap-to-road, dispatchToIncident, timer
+  if (typeof badGuy === 'undefined' || !badGuy) return;
+  // Resolve the triangulated origin to a real street address — 911 callers
+  // (even synthetic acoustic ones) describe locations by street, not coords.
+  var triAddr = _ic_addressAt(lat, lon) || 'an unresolved location';
+  badGuy.incidentMeta = {
+    id:       'shots_fired',
+    label:    'Shots fired (acoustic)',
+    color:    null,
+    apparel:  null,
+    subkind:  'gunshot',
+    motion:   'moving',
+    callText: 'Acoustic gunshot triangulated near ' + triAddr + '.'
+  };
+  // motion='moving' override: give the shooter a fleeing heading + speed
+  badGuy.maxSpeed = MODE_MAX_SPEED[t] || 30;
+  badGuy.speed    = badGuy.maxSpeed * (0.7 + Math.random() * 0.3);
+  badGuy.bearing  = Math.random() * 360;
+  // Update call-display panel + alert + taskings card
+  var disp  = document.getElementById('call-display');
+  var label = document.getElementById('call-label');
+  var body  = document.getElementById('call-body');
+  var meta  = document.getElementById('call-meta');
+  if (disp && label && body) {
+    disp.style.display = 'block';
+    label.textContent = 'Shots fired (acoustic)';
+    body.textContent  = '— Acoustic triangulation only — no witness description —';
+    if (meta) meta.textContent = 'Search criteria: ' + t + ' / unknown description';
+  }
+  addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id +
+    ' &mdash; Shots fired (acoustic)</strong>: ' + t +
+    ' at triangulated origin near ' + triAddr +
+    '. No witness description.');
+  renderTaskings();
+}
 
 function fireGunshot() {
   if (!badGuy || !badGuy.active) {
@@ -1890,8 +3435,9 @@ function fireGunshot() {
     if (d <= MIC_CONFIG.radius) hearing.push({ mic:m, dist:d });
   });
   var lat = badGuy.lat, lon = badGuy.lon;
+  var shotAddr = _ic_addressAt(lat, lon) || 'an unresolved location';
   if (hearing.length === 0) {
-    addAlert('warn', '<strong>🔊 GUNSHOT</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+    addAlert('warn', '<strong>🔊 GUNSHOT</strong> near '+shotAddr+
       ' — no mic coverage. Event unconfirmed.');
     return;
   }
@@ -1899,7 +3445,7 @@ function fireGunshot() {
   renderTriangulation(hearing, lat, lon);
   // Validation alert
   var validated = hearing.length >= 3;
-  addAlert('bad', '<strong>🔊 GUNSHOT DETECTED</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+  addAlert('bad', '<strong>🔊 GUNSHOT DETECTED</strong> near '+shotAddr+
     ' — '+hearing.length+' mic'+(hearing.length===1?'':'s')+' picked up event. '+
     (validated ? '<strong>Triangulation confirmed.</strong>' : 'Confidence: low ('+hearing.length+' < 3 mics).'));
   // Dispatch — all unit types head to the shooter (current bad guy position)
@@ -1934,6 +3480,9 @@ function clearTriangulation() {
   if (src) src.setData({ type:'FeatureCollection', features: [] });
   mics.forEach(function(m) { m.el.classList.remove('mic-hearing'); });
   if (gunshotMarker) { gunshotMarker.remove(); gunshotMarker = null; }
+  // Phase 3: also wipe acoustic-triangulation lines + crosshair + pending timers
+  _clearTriPhase3Viz();
+  TRI_ACTIVE = false;
 }
 
 function dispatchAcoustic(validated) {
@@ -1962,12 +3511,13 @@ function dispatchAcoustic(validated) {
 }
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
-function inFOV(agent) {
-  if (!badGuy || !badGuy.active) return false;
-  var dist = haversineM(agent.lat, agent.lon, badGuy.lat, badGuy.lon);
+function inFOV(agent, target) {
+  var t = target || badGuy;
+  if (!t || !t.active) return false;
+  var dist = haversineM(agent.lat, agent.lon, t.lat, t.lon);
   if (dist > agent.cfg.fovDist) return false;
   if (agent.cfg.fovAngle >= 360) return true;
-  var diff = Math.abs(((bearingDeg(agent.lat,agent.lon,badGuy.lat,badGuy.lon) - agent.bearing)+540)%360-180);
+  var diff = Math.abs(((bearingDeg(agent.lat,agent.lon,t.lat,t.lon) - agent.bearing)+540)%360-180);
   return diff <= agent.cfg.fovAngle / 2;
 }
 
@@ -1984,65 +3534,47 @@ function closestAgent(type) {
 }
 
 function dispatchPursuit(detector) {
-  var dispatched = [];
-  // Always dispatch a car first — guaranteed
-  if (!pursuing['car'] || pursuing['car'].status !== 'pursuing') {
-    var carUnit = closestAgent('car');
-    if (carUnit) {
-      carUnit.status = 'pursuing';
-      pursuing['car'] = carUnit;
-      carUnit.targetNode = carUnit._pickPursuitTarget();
-      carUnit.pauseUntil = 0;
-      dispatched.push(carUnit.cfg.label + ' ' + carUnit.id);
-    }
-  }
-  // Dispatch closest bike, officer, and drone
-  ['bike','officer','drone'].forEach(function(type) {
-    if (pursuing[type] && pursuing[type].status==='pursuing') return;
-    var a = closestAgent(type);
-    if (a) {
-      a.status='pursuing';
-      pursuing[type]=a;
-      a.targetNode = a._pickPursuitTarget();
-      a.pauseUntil = 0;
-      dispatched.push(a.cfg.label+' '+a.id);
-    }
-  });
-  if (dispatched.length) {
-    detectionCount++;
-    document.getElementById('i-det').textContent = detectionCount;
-    document.getElementById('i-stat').textContent = 'DETECTED';
-    addAlert('bad', '<strong>'+detector.cfg.label+' '+detector.id+' HAS VISUAL</strong>'
-      +' on '+({car:'Red Car',bike:'Red Bike',person:'Red Person'}[badGuy.type])
-      +'. Dispatching: '+dispatched.join(', ')+'.');
-    // Drone specifically announces coordinates to ground units
-    if (detector.type==='drone') {
-      addAlert('warn', 'Drone '+detector.id+' broadcasting position: '
-        +badGuy.lat.toFixed(4)+', '+badGuy.lon.toFixed(4));
-    }
-  }
+  // Phase 2: kept as a no-op shell. Dispatch happens via 911 call. Detection alerts
+  // are now emitted by recordDetection (Phase 4) directly from check{Camera,}Detection.
 }
 
+// Phase 4: iterate every active incident; fire a detection event for every agent whose
+// own FOV overlaps. Agent dash/body cams always work — these are not gated by the user toggle.
 function checkDetection() {
-  if (!badGuy || !badGuy.active) return;
+  if (!badGuys.length) return;
   agents.forEach(function(a) {
-    if (a.status==='captured') return;
-    if (inFOV(a)) {
-      if (!a._hasVisual) { a._hasVisual=true; dispatchPursuit(a); }
-    } else {
-      a._hasVisual = false;
-    }
+    if (a.status === 'captured') return;
+    // Track visual state per (agent, bg) for HUD coloring on the FOV polygon
+    a._hasVisual = false;
+    // Per-tick rebuild of "this agent has bg X in FOV" map; consumed by
+    // handleOscillation to decide observe-vs-relocate, and by checkStuckAgents
+    // for observer recovery when FOV is lost.
+    a._inFovOf = {};
+    badGuys.forEach(function(bg) {
+      if (!bg.active) return;
+      if (inFOV(a, bg)) {
+        a._hasVisual = true;
+        a._inFovOf[bg.id] = true;
+        recordDetection(bg, 'agent-' + a.type + '-' + a.id,
+          a.cfg.label + ' ' + a.id + ' ' + (a.type === 'drone' ? 'overhead camera' : 'dash/body cam'),
+          'match: ' + _detMatch(bg, false));
+      }
+    });
+    // Opportunistic target switch: if this unit can see a different unassigned
+    // suspect but not its own assignment, hand off. Silent.
+    tryFovHandoff(a);
   });
 }
 
 // Does the bad guy fall inside ANY of this camera's wedges?
-function inCameraFOV(cam) {
-  if (!badGuy || !badGuy.active) return false;
+function inCameraFOV(cam, target) {
+  var t = target || badGuy;
+  if (!t || !t.active) return false;
   var cfg = cam.subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-  var dist = haversineM(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  var dist = haversineM(cam.lat, cam.lon, t.lat, t.lon);
   if (dist > cfg.fovDist) return false;
   var bearings = cam.subtype === 'surveillance' ? surveillanceBearings(cam) : trafficCamBearings(cam);
-  var brgToBG  = bearingDeg(cam.lat, cam.lon, badGuy.lat, badGuy.lon);
+  var brgToBG  = bearingDeg(cam.lat, cam.lon, t.lat, t.lon);
   var half = cfg.fovAngle / 2;
   return bearings.some(function(b) {
     var diff = Math.abs(((brgToBG - b) + 540) % 360 - 180);
@@ -2050,19 +3582,29 @@ function inCameraFOV(cam) {
   });
 }
 
+// Phase 4: same pattern — iterate every active incident. Cameras only fire if the user
+// has the relevant sensor type toggled ON (assetVisibility key). This gates the thesis:
+// without sensors, only the patrolling units' own cams produce detections.
 function checkCameraDetection() {
-  if (!badGuy || !badGuy.active) return;
+  if (!badGuys.length) return;
   cameras.forEach(function(cam) {
-    if (inCameraFOV(cam)) {
-      if (!cam._hasVisual) {
+    // All cameras (traffic + surveillance) share one toggle now
+    if (!assetVisibility['traffic-cams']) { cam._hasVisual = false; return; }
+    cam._hasVisual = false;
+    badGuys.forEach(function(bg) {
+      if (!bg.active) return;
+      if (inCameraFOV(cam, bg)) {
         cam._hasVisual = true;
-        // Build a synthetic "detector" for dispatchPursuit's alert plumbing
-        var camLabel = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
-        dispatchPursuit({ type: 'camera', id: cam.id, cfg: { label: camLabel } });
+        var label = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
+        // lprCapable=true: fixed cameras (traffic + surveillance) all do LPR
+        // per spec. _detMatch will surface "LPR MATCH — plate X, color vehicle"
+        // when the bg has a plate. Drone cams aren't in `cameras`, so they
+        // never reach this path.
+        recordDetection(bg, 'cam-' + cam.subtype + '-' + cam.id,
+          label + ' #' + cam.id,
+          'match: ' + _detMatch(bg, true));
       }
-    } else {
-      cam._hasVisual = false;
-    }
+    });
   });
 }
 
@@ -2106,26 +3648,173 @@ function checkCapture() {
   }
 }
 
+// ── Phase 4: CV detection & "last known position" routing ──────────────────
+// Each incident has a searchLat/searchLon — units pursue this, not the suspect's
+// true position. Detections (any camera or unit FOV overlapping the suspect) fire
+// alerts and refresh the search position to the suspect's current location.
+
+// Returns the lat/lon units should route toward for this incident
+function searchPos(bg) {
+  if (bg.searchLat != null && bg.searchLon != null) return { lat: bg.searchLat, lon: bg.searchLon };
+  return { lat: bg.lat, lon: bg.lon };
+}
+
+// Fire a detection: refresh search position + write an alert (debounced per detector-target)
+function recordDetection(bg, detectorKey, detectorLabel, matchSummary) {
+  if (!bg || !bg.active) return;
+  var now = Date.now();
+  bg._detectionLog = bg._detectionLog || {};
+  var prev = bg._detectionLog[detectorKey] || { lastSeen: 0 };
+  // Always refresh the search position when a detector has visual — this is the
+  // mechanism the thesis depends on. Coverage = fresh search position = faster catch.
+  bg.searchLat = bg.lat;
+  bg.searchLon = bg.lon;
+  bg.lastDetectedAt = now;
+  // Alert only on RISING EDGE — first acquisition after a 5+ second gap.
+  // Continuous detection (drone orbiting overhead) silently refreshes search
+  // position but doesn't spam the alert feed.
+  var risingEdge = (now - prev.lastSeen) > 5000;
+  prev.lastSeen = now;
+  bg._detectionLog[detectorKey] = prev;
+  if (!risingEdge) return;
+  addAlert('warn', '<strong>' + detectorLabel + ' &mdash; visual on Incident #' + bg.id + '</strong> &mdash; ' + matchSummary + '.');
+}
+
+// Build a short "match description" string for an incident.
+// lprCapable=true means the detector is a fixed LPR-equipped camera and should
+// surface the plate (when present) as "LPR plate XXX, [color] vehicle" — that's
+// the credit-line for the camera mesh in the alert feed. Agent dash/body cams
+// are not LPR-capable in this sim and pass false; they get the basic color+type.
+function _detMatch(bg, lprCapable) {
+  var m = bg.incidentMeta || {};
+  var color = m.color || '';
+  if (bg.type === 'person') {
+    return (color ? color + ' ' : '') + (m.apparel || 'suspect');
+  }
+  var base = ((color ? color + ' ' : '') + (bg.type === 'car' ? 'vehicle' : 'bike')).trim();
+  if (lprCapable && m.plate && bg.type === 'car') {
+    return 'LPR MATCH — plate ' + m.plate + ', ' + base;
+  }
+  return base;
+}
+
+// ── A* SHORTEST PATH ON ROAD GRAPH ────────────────────────────────────────────
+// Used by pursuit so units take the shortest road route to the suspect instead
+// of greedy local-minimum hops. hwFilter restricts which highway types the
+// edges may use (so a police car routes via vehicle roads only, etc).
+function findRoadPath(startId, goalId, hwFilter) {
+  if (startId === goalId) return [startId];
+  var nodes = roadGraph.nodes;
+  if (!nodes[startId] || !nodes[goalId]) return null;
+  var goal = nodes[goalId];
+  var open = {}, openList = [startId];
+  var closed = {};
+  var gScore = {}; gScore[startId] = 0;
+  var fScore = {}; fScore[startId] = haversineM(nodes[startId].lat, nodes[startId].lon, goal.lat, goal.lon);
+  var parent = {};
+  open[startId] = true;
+  // Iteration cap so unreachable goals don't run away
+  var MAX_ITER = 6000, iter = 0;
+  while (openList.length && iter++ < MAX_ITER) {
+    // Pick node in open set with lowest fScore (linear scan — graphs are small)
+    var bestIdx = 0, bestF = fScore[openList[0]];
+    for (var i = 1; i < openList.length; i++) {
+      if (fScore[openList[i]] < bestF) { bestIdx = i; bestF = fScore[openList[i]]; }
+    }
+    var current = openList[bestIdx];
+    if (current === goalId) {
+      var path = [current];
+      while (parent[current] !== undefined) { current = parent[current]; path.unshift(current); }
+      return path;
+    }
+    openList[bestIdx] = openList[openList.length - 1];
+    openList.pop();
+    delete open[current];
+    closed[current] = true;
+    var n = nodes[current];
+    if (!n || !n.neighbors) continue;
+    for (var j = 0; j < n.neighbors.length; j++) {
+      var nb = n.neighbors[j];
+      if (closed[nb] || !nodes[nb]) continue;
+      // Filter by allowed highway type for this agent type
+      if (hwFilter && n.neighborHW && n.neighborHW[nb]) {
+        var info = n.neighborHW[nb];
+        var hw = info && info.hw ? info.hw : info;
+        if (!hwFilter.test(hw)) continue;
+      }
+      var edgeCost = haversineM(n.lat, n.lon, nodes[nb].lat, nodes[nb].lon);
+      var tentG = gScore[current] + edgeCost;
+      if (gScore[nb] === undefined || tentG < gScore[nb]) {
+        parent[nb] = current;
+        gScore[nb] = tentG;
+        fScore[nb] = tentG + haversineM(nodes[nb].lat, nodes[nb].lon, goal.lat, goal.lon);
+        if (!open[nb]) { open[nb] = true; openList.push(nb); }
+      }
+    }
+  }
+  return null;
+}
+
 // ── PURSUIT TARGET SELECTION ──────────────────────────────────────────────────
+// Compute A* shortest path from agent's current node to the road-graph node
+// nearest the search position (last detected). Cache it; just follow the path
+// hop by hop. Recompute only when search position drifts or agent leaves the
+// cached path. No more greedy "guess the right turn at this intersection".
 Agent.prototype._pickPursuitTarget = function() {
-  if (!badGuy || !badGuy.active) { this.status='patrol'; return this._pickTarget(); }
+  var tgt = targetFor(this);
+  if (!tgt || !tgt.active) { this.status='patrol'; this.taskedTo=null; return this._pickTarget(); }
   var n = roadGraph.nodes[this.currentNode];
   if (!n || !n.neighbors.length) return this.currentNode;
-  var self=this;
-  // During pursuit: relax highway restrictions — all units can use any road to catch target
-  var valid = n.neighbors.filter(function(nid) {
-    if (nid==self.prevNode) return false;
-    return roadGraph.nodes[nid];
-  });
-  if (!valid.length) valid=n.neighbors.filter(function(nid){return roadGraph.nodes[nid];});
-  if (!valid.length) return this.currentNode;
-  var best=valid[0], bestD=Infinity;
-  valid.forEach(function(nid){
-    var nb=roadGraph.nodes[nid];
-    var d=haversineM(nb.lat,nb.lon,badGuy.lat,badGuy.lon);
-    if(d<bestD){bestD=d;best=nid;}
-  });
-  return best;
+  var sp = searchPos(tgt);
+
+  // ── Goal: nearest road-graph node to searchPos, in THIS agent's allowed graph
+  // (cached — only recompute if searchPos has drifted by 20m+)
+  var spDrift = this._pursuitSp
+    ? haversineM(this._pursuitSp.lat, this._pursuitSp.lon, sp.lat, sp.lon)
+    : Infinity;
+  if (spDrift > 20) {
+    var pool = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
+    var gId = null, gD = Infinity;
+    for (var i = 0; i < pool.length; i++) {
+      var pn = roadGraph.nodes[pool[i]];
+      if (!pn) continue;
+      var d = haversineM(pn.lat, pn.lon, sp.lat, sp.lon);
+      if (d < gD) { gD = d; gId = pool[i]; }
+    }
+    this._pursuitGoal = gId;
+    this._pursuitSp = { lat: sp.lat, lon: sp.lon };
+    this._pursuitPath = null;     // invalidate cached path
+  }
+
+  if (!this._pursuitGoal) return n.neighbors[0];
+
+  // ── Path: A* on agent's allowed-highway graph (recompute if missing or off-path)
+  var hwFilter = ALLOWED_HIGHWAYS[this.type];
+  if (!this._pursuitPath || this._pursuitPath.indexOf(this.currentNode) === -1) {
+    this._pursuitPath = findRoadPath(this.currentNode, this._pursuitGoal, hwFilter);
+  }
+
+  // No path (goal unreachable from here in this agent's graph) — fall back
+  // to greedy single-hop so the unit at least moves toward the suspect
+  if (!this._pursuitPath || !this._pursuitPath.length) {
+    var any = n.neighbors.filter(function(nid){ return roadGraph.nodes[nid]; });
+    if (!any.length) return this.currentNode;
+    var goalNode = roadGraph.nodes[this._pursuitGoal];
+    var best = any[0], bestD = Infinity;
+    any.forEach(function(nid) {
+      var nb = roadGraph.nodes[nid];
+      var d = haversineM(nb.lat, nb.lon, goalNode.lat, goalNode.lon);
+      if (d < bestD) { bestD = d; best = nid; }
+    });
+    return best;
+  }
+
+  // ── Follow the path: next node after current
+  var idx = this._pursuitPath.indexOf(this.currentNode);
+  if (idx === -1 || idx >= this._pursuitPath.length - 1) {
+    return this.currentNode;     // at goal node — stay (arrival logic takes over)
+  }
+  return this._pursuitPath[idx + 1];
 };
 
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
@@ -2292,21 +3981,477 @@ document.getElementById('btn-start').onclick=function(){
   addAlert('ok','<strong>Scenario started.</strong> Deploying 3 drones, 10 vehicles, 10 bikes, 10 officers...');
   placeAgents();
 };
-document.getElementById('btn-deploy').onclick=function(){
-  document.getElementById('tpicker').style.display='block';
-};
+// ── 911 CALL INCIDENT GENERATOR (Phase 1) ────────────────────────────────────
+// Auto-generates a random incident from a curated table on button click.
+// Spawns a BadGuy of the appropriate type at a random map point, fills the
+// 911 call display panel with a templated script, and reads it aloud via TTS.
+
+var INCIDENT_TYPES = [
+  { id:'hit_run',     label:'Hit and run',                  objType:'car',    weight:2,
+    template:"Hello, yes, I need to report a hit and run. A {color} sedan just sideswiped a vehicle near {address}. They're heading {direction}. Please send someone." },
+  { id:'carjack',     label:'Carjacking in progress',       objType:'car',    weight:1,
+    template:"There's a carjacking happening at {address} — guy just yanked the driver out of a {color} car and took off going {direction}. Send someone right now." },
+  { id:'sus_vehicle', label:'Suspicious vehicle',           objType:'car',    weight:2, motion:'still',
+    template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
+  { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
+    template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
+  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
+    template:"Someone in a {color} shirt just robbed a passerby and is running {direction} near {address}. Please hurry." },
+  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still',
+    template:"There's a group of maybe three kids causing a disturbance near {address}. Wearing mostly {color}. They're being loud and harassing people." },
+  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
+    template:"There's a person in a {color} shirt down on the ground near {address}. They're not moving much. I think they need help." },
+  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:15, subkind:'gunshot', motion:'still',
+    // TEMP TEST: weight bumped 1 → 15 to make shots_fired ~50% of rolls so the
+    // acoustic-triangulation flow can be verified end-to-end. Revert to 1 for
+    // production distribution. With weight 15 + other 15 weight points the
+    // total is 30 and shots_fired = 15/30 = 50.0%.
+    template:"I just heard three or four gunshots from somewhere near {address}. I see someone in a {color} jacket but they're not moving — I think they're hurt." },
+  { id:'lpr_plate',   label:'Plate sighting (LPR-eligible)', objType:'car',    weight:2, subkind:'lpr',
+    template:"Yeah hi, I want to report a car driving really aggressive — I got the plate, it's {plate}, a {color} sedan heading {direction} near {address}." }
+];
+
+var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
+var SHIRT_COLORS = [['blue',18],['black',18],['white',15],['gray',12],['red',10],['green',8],['yellow',5],['orange',5],['brown',5],['purple',4]];
+var BIKE_COLORS  = [['black',30],['silver',15],['blue',15],['red',12],['white',10],['green',8],['yellow',5],['orange',5]];
+
+var BOSTON_STREETS   = ['Boylston Street','Tremont Street','Charles Street','Beacon Street','Park Street','Arlington Street','Berkeley Street','Clarendon Street','Newbury Street','Commonwealth Avenue','Stuart Street','Washington Street'];
+// Landmarks now carry coordinates so the 911 call references the closest one
+// to the spawn point — no more "Beacon Hill" called in when the suspect is up
+// in the West End.
+var BOSTON_LANDMARKS = [
+  { name:'the Frog Pond',                 lat:42.3554, lon:-71.0660 },
+  { name:'the Park Street T entrance',    lat:42.3565, lon:-71.0626 },
+  { name:'the State House',               lat:42.3588, lon:-71.0637 },
+  { name:'the Common bandstand',          lat:42.3548, lon:-71.0648 },
+  { name:'the Brewer Fountain',           lat:42.3565, lon:-71.0645 },
+  { name:'the Boylston T entrance',       lat:42.3527, lon:-71.0641 },
+  { name:'Government Center',             lat:42.3604, lon:-71.0589 },
+  { name:'the Soldiers Monument',         lat:42.3552, lon:-71.0656 },
+  { name:'Beacon Hill',                   lat:42.3589, lon:-71.0680 },
+  { name:'Quincy Market',                 lat:42.3600, lon:-71.0547 },
+  { name:'Faneuil Hall',                  lat:42.3601, lon:-71.0566 },
+  { name:'the Charles/MGH T station',     lat:42.3613, lon:-71.0708 },
+  { name:'Massachusetts General Hospital',lat:42.3633, lon:-71.0686 },
+  { name:'Downtown Crossing',             lat:42.3551, lon:-71.0608 },
+  { name:'the Theater District',          lat:42.3517, lon:-71.0643 },
+  { name:'North Station',                 lat:42.3656, lon:-71.0622 },
+  { name:'Bowdoin T station',             lat:42.3614, lon:-71.0626 }
+];
+// Returns the closest landmark name, but only if it's actually nearby (within
+// ~150m — beyond that, a 911 caller wouldn't really describe the location by
+// reference to it). Returns null when nothing is close, so the caller can
+// substitute a real street address. 150m ≈ 1.5 blocks / a 2-minute walk.
+var LANDMARK_MAX_DIST = 150;
+function _ic_nearestLandmark(lat, lng) {
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < BOSTON_LANDMARKS.length; i++) {
+    var lm = BOSTON_LANDMARKS[i];
+    var d = haversineM(lat, lng, lm.lat, lm.lon);
+    if (d < bestD) { bestD = d; best = lm; }
+  }
+  if (!best || bestD > LANDMARK_MAX_DIST) return null;
+  return best.name;
+}
+var DIRECTIONS       = ['north','south','east','west','northeast','northwest','southeast','southwest'];
+
+function _ic_wpick(arr) {
+  var t = 0; for (var i=0;i<arr.length;i++) t += arr[i][1];
+  var r = Math.random() * t;
+  for (var j=0;j<arr.length;j++) { r -= arr[j][1]; if (r <= 0) return arr[j][0]; }
+  return arr[0][0];
+}
+function _ic_pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
+
+var APPAREL_ITEMS = ['shirt','jacket','hoodie','sweatshirt','vest','jersey','coat'];
+function _ic_pickApparel() { return _ic_pick(APPAREL_ITEMS); }
+
+function _ic_colorFor(objType) {
+  if (objType === 'car')  return _ic_wpick(CAR_COLORS);
+  if (objType === 'bike') return _ic_wpick(BIKE_COLORS);
+  return _ic_wpick(SHIRT_COLORS);
+}
+
+function _ic_randomMapPoint() {
+  // Pick a random road-graph node from the SPAWN_HIGHWAYS tier — every
+  // named city street (primary/secondary/tertiary/residential/unclassified).
+  // Tighter than the car-traversal pool, so suspects never land on highway
+  // ramps, service driveways, or alley fragments that ground units can't
+  // sensibly reach. Falls back to a bbox-uniform random pick if the road
+  // network hasn't loaded yet.
+  if (!roadGraph || !roadGraph.spawnNodes || !roadGraph.spawnNodes.length) {
+    return {
+      lat: 42.345 + Math.random() * (42.365 - 42.345),
+      lng: -71.082 + Math.random() * ((-71.050) - (-71.082))
+    };
+  }
+  var pool = roadGraph.spawnNodes;
+  var inBounds = [];
+  for (var i = 0; i < pool.length; i++) {
+    var n = roadGraph.nodes[pool[i]];
+    if (n && n.lat >= 42.345 && n.lat <= 42.365 &&
+        n.lon >= -71.082 && n.lon <= -71.050) {
+      inBounds.push(pool[i]);
+    }
+  }
+  var ids = inBounds.length ? inBounds : pool;
+  var pick = ids[Math.floor(Math.random() * ids.length)];
+  var node = roadGraph.nodes[pick];
+  return { lat: node.lat, lng: node.lon };
+}
+
+// Resolve any lat/lon to a real street address ("[house#] [street]"). Used
+// across the 911 pipeline — call text, alerts, dispatch — so the operator
+// always sees something a human caller would actually say. Returns null only
+// if the road network isn't loaded or has no named ways at all (in which case
+// callers should abort the action and surface an error).
+function _ic_addressAt(lat, lng) {
+  if (!roadNetworkReady) return null;
+  var nid = nearestNode(lat, lng);
+  var name = streetNameAtNode(nid);
+  if (!name) return null;
+  var num = 100 + Math.floor(Math.random() * 800);
+  return num + ' ' + name;
+}
+
+// MA-style synthetic plate: 3 letters + 4 digits. Skips I/O/Q to avoid
+// being confused with 1/0. Used by lpr_plate incidents — flows into the
+// 911 call text, the bg's incidentMeta, and the LPR-MATCH alert when any
+// fixed camera reads it.
+function _ic_generatePlate() {
+  var letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  var digits  = '0123456789';
+  var p = '';
+  for (var i = 0; i < 3; i++) p += letters.charAt(Math.floor(Math.random() * letters.length));
+  for (var j = 0; j < 4; j++) p += digits.charAt(Math.floor(Math.random() * digits.length));
+  return p;
+}
+
+function _ic_fill(tpl, tokens) {
+  return tpl.replace(/\{(\w+)\}/g, function(_, k) {
+    return (tokens[k] != null) ? tokens[k] : ('{' + k + '}');
+  });
+}
+
+function _ic_pickIncident() {
+  var weighted = INCIDENT_TYPES.map(function(i) { return [i, i.weight || 1]; });
+  return _ic_wpick(weighted);
+}
+
+// Web Speech API reads "911" as "nine hundred eleven" and license plates
+// like "ABC1234" as "A B C, twelve thirty-four" — both unnatural. Preprocess
+// the text passed to the synthesizer only (display stays as-is):
+//  - "911"       → "9-1-1"     (hyphens force digit-by-digit)
+//  - "ABC1234"   → "A B C 1 2 3 4"  (spaces force per-character)
+// SSML would be the "right" way but Chrome's speech engine ignores SSML.
+function _ic_speechPrep(text) {
+  if (!text) return text;
+  var s = String(text);
+  s = s.replace(/\b911\b/g, '9-1-1');
+  s = s.replace(/\b([A-Z]{3})([0-9]{4})\b/g, function(m, letters, digits) {
+    return letters.split('').join(' ') + ' ' + digits.split('').join(' ');
+  });
+  return s;
+}
+
+function _ic_speak(text) {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  try {
+    window.speechSynthesis.cancel();
+    var voices = window.speechSynthesis.getVoices().filter(function(v) {
+      return v.lang && v.lang.toLowerCase().indexOf('en') === 0;
+    });
+    var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
+    if (voices.length > 0) {
+      utt.voice = voices[Math.floor(Math.random()*voices.length)];
+    }
+    utt.rate  = 0.95 + Math.random()*0.1;
+    utt.pitch = 0.9  + Math.random()*0.2;
+    window.speechSynthesis.speak(utt);
+  } catch(e) { /* swallow */ }
+}
+
+// ── System dispatcher voice ────────────────────────────────────────────────
+// Used by acoustic-dispatch announcements (and any future system-level voice).
+// Distinct from _ic_speak (random per-call voice for synthetic 911 witnesses).
+// Picks a SINGLE smooth English male voice once on page load and reuses it for
+// every system message. Voice loading is async in browsers, so we resolve on
+// the 'voiceschanged' event and also lazily on first call.
+var _ic_systemVoice = null;
+var _ic_systemVoicePreferences = [
+  // Edge neural voices — best quality, very natural
+  'Microsoft Davis Online', 'Microsoft Guy Online', 'Microsoft Tony Online',
+  'Microsoft Aaron Online',
+  // Chrome and Safari/macOS smooth male voices
+  'Google UK English Male', 'Google US English',
+  'Daniel',          // macOS UK English male (very smooth)
+  'Alex',            // macOS US English male
+  // Older but reliable Windows voices
+  'Microsoft George', 'Microsoft Mark', 'Microsoft David'
+];
+
+function _ic_pickSystemVoice() {
+  if (typeof window.speechSynthesis === 'undefined') return null;
+  var voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  // Try preferred names in order
+  for (var i = 0; i < _ic_systemVoicePreferences.length; i++) {
+    var pref = _ic_systemVoicePreferences[i].toLowerCase();
+    for (var j = 0; j < voices.length; j++) {
+      if (voices[j].name && voices[j].name.toLowerCase().indexOf(pref) >= 0) {
+        return voices[j];
+      }
+    }
+  }
+  // Fallback: any English voice with "male" in name (excluding "female")
+  for (var k = 0; k < voices.length; k++) {
+    var v = voices[k], n = (v.name || '').toLowerCase();
+    if (v.lang && v.lang.toLowerCase().indexOf('en') === 0
+        && n.indexOf('male') >= 0 && n.indexOf('female') < 0) {
+      return v;
+    }
+  }
+  // Last resort: any English voice (let the OS pick)
+  for (var l = 0; l < voices.length; l++) {
+    if (voices[l].lang && voices[l].lang.toLowerCase().indexOf('en') === 0) {
+      return voices[l];
+    }
+  }
+  return null;
+}
+
+// Initialize system voice when browser finishes loading voice list
+if (typeof window.speechSynthesis !== 'undefined') {
+  // Try immediately (voices may already be loaded)
+  _ic_systemVoice = _ic_pickSystemVoice();
+  // Re-resolve when voices finish loading async
+  window.speechSynthesis.onvoiceschanged = function() {
+    _ic_systemVoice = _ic_pickSystemVoice();
+  };
+}
+
+function _ic_systemSpeak(text) {
+  if (typeof window.speechSynthesis === 'undefined') return;
+  try {
+    // Lazy-resolve voice if not yet cached (page may have loaded before voices
+    // were available; this catches the first user gesture after voices loaded).
+    if (!_ic_systemVoice) _ic_systemVoice = _ic_pickSystemVoice();
+    window.speechSynthesis.cancel();
+    var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
+    if (_ic_systemVoice) utt.voice = _ic_systemVoice;
+    utt.rate  = 1.0;   // steady dispatcher cadence — no random variation
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    window.speechSynthesis.speak(utt);
+  } catch(e) { /* swallow */ }
+}
+
+function _ic_display(incident, text, tokens) {
+  var disp  = document.getElementById('call-display');
+  var label = document.getElementById('call-label');
+  var body  = document.getElementById('call-body');
+  var meta  = document.getElementById('call-meta');
+  if (!disp || !label || !body) return;
+  disp.style.display = 'block';
+  label.textContent = incident.label;
+  body.textContent  = '"' + text + '"';
+  if (meta) {
+    meta.textContent = 'Search criteria: ' + incident.objType + ' / ' + tokens.color;
+  }
+}
+
+function answer911Call() {
+  if (!scenarioOn) {
+    addAlert('warn', 'Scenario not active yet — wait a moment for the system to finish loading.');
+    return;
+  }
+  var incident = _ic_pickIncident();
+
+  // Phase 3: shots_fired uses the acoustic-triangulation path instead of the
+  // human-witness 911 call path. (Other incident types are unaffected and
+  // continue through the normal flow below.)
+  if (incident.id === 'shots_fired') {
+    if (TRI_ACTIVE) {
+      addAlert('warn', '🔇 Acoustic triangulation already in progress — try again in a moment.');
+      return;
+    }
+    var dup = badGuys.some(function(bg) {
+      return bg.active && bg.incidentMeta && bg.incidentMeta.subkind === 'gunshot';
+    });
+    if (dup) {
+      addAlert('warn', '🔇 Another gunshot incident is still active — only one at a time.');
+      return;
+    }
+    // Pick a candidate origin that resolves to a real street address — same
+    // retry loop as the normal 911 flow, so the acoustic call text references
+    // an actual street rather than coordinates.
+    if (!roadNetworkReady) {
+      addAlert('warn', 'Acoustic event dropped — road network not loaded yet.');
+      return;
+    }
+    // If mics aren't usable at all, drop immediately — no point retrying.
+    if (!assetVisibility.mics) {
+      addAlert('warn', '🔇 Acoustic event dropped — mic mesh offline.');
+      return;
+    }
+    if (!mics.length) {
+      addAlert('warn', '🔇 Acoustic event dropped — mic mesh still warming up.');
+      return;
+    }
+    // Find an origin that (a) resolves to a street name AND (b) has 3+ mics
+    // within TRI_QUALITY_RADIUS for clean triangulation. With mics in a
+    // 4×5 grid spaced ~700×520m and a 400m quality threshold, random points
+    // often fall in coverage gaps — so retry until we find a viable spot.
+    var origin = null;
+    for (var tries = 0; tries < 20 && !origin; tries++) {
+      var cand = _ic_randomMapPoint();
+      var snapped = snapToRoad(cand.lat, cand.lng, 'person');
+      cand.lat = snapped.lat; cand.lng = snapped.lon;
+      if (!streetNameAtNode(nearestNode(cand.lat, cand.lng))) continue;
+      if (!canTriangulate(cand.lat, cand.lng)) continue;
+      origin = cand;
+    }
+    if (!origin) {
+      addAlert('warn', '🔇 Acoustic event dropped — no spot in the operational area has both a street address and ≥3 mics within ' + TRI_QUALITY_RADIUS + 'm. Check mic placement / coverage.');
+      return;
+    }
+    // Acoustic dispatch flow for shots_fired: there's no human witness — the
+    // mic mesh detected the event. A SYSTEM dispatcher voice announces the
+    // detection, then triangulation runs and a suspect spawns at the located
+    // origin (motion='moving' — they're fleeing) for units to discover and
+    // capture. Distinct from other 911 incidents which use random caller voices.
+    var originAddr     = _ic_addressAt(origin.lat, origin.lng) || 'an unresolved location';
+    var dispatcherText = 'Shots detected. Deploying drone and response team.';
+
+    var disp  = document.getElementById('call-display');
+    var label = document.getElementById('call-label');
+    var body  = document.getElementById('call-body');
+    var meta  = document.getElementById('call-meta');
+    if (disp && label && body) {
+      disp.style.display = 'block';
+      label.textContent = 'Shots fired (acoustic)';
+      body.textContent  = dispatcherText;
+      if (meta) meta.textContent = 'Triangulating near ' + originAddr + '\u2026';
+    }
+
+    addAlert('bad', '\ud83d\udd0a <strong>SYSTEM</strong>: ' + dispatcherText);
+    _ic_systemSpeak(dispatcherText);
+    runShotsFiredTriangulation(origin.lat, origin.lng, {
+      onComplete: function(lat, lon) { spawnAcousticSuspect(lat, lon); }
+    });
+    return;
+  }
+
+  // Pick a spawn point that resolves to a real street address. Retry a few
+  // times because a 911 caller would always describe their location by street
+  // — never by lat/lon. If no point in 5 tries resolves, the road network
+  // isn't usable; abort and surface the error.
+  if (!roadNetworkReady) {
+    addAlert('warn', '911 call dropped — road network not loaded yet. Try again in a moment.');
+    return;
+  }
+  var pt = null, realStreet = null;
+  for (var tries = 0; tries < 5 && !realStreet; tries++) {
+    var cand = _ic_randomMapPoint();
+    var snapped = snapToRoad(cand.lat, cand.lng, incident.objType);
+    cand.lat = snapped.lat; cand.lng = snapped.lon;
+    var nid = nearestNode(cand.lat, cand.lng);
+    var name = streetNameAtNode(nid);
+    if (name) {
+      pt = cand;
+      realStreet = name;
+    }
+  }
+  if (!realStreet) {
+    addAlert('warn', '911 call dropped — could not resolve a street address after 5 attempts (graph data may be incomplete).');
+    return;
+  }
+  var addressNum = 100 + Math.floor(Math.random() * 800);
+  var addrStr    = addressNum + ' ' + realStreet;
+  var lmName     = _ic_nearestLandmark(pt.lat, pt.lng);
+  // LPR-eligible incidents get a synthetic plate that flows through into
+  // (a) the 911 call text via {plate}, (b) the bg's incidentMeta so fixed
+  // cameras can call out an "LPR MATCH" when they read it, (c) the dispatch
+  // alert. Other car incidents (hit_run, carjack, sus_vehicle) stay color-only.
+  var plate = (incident.id === 'lpr_plate') ? _ic_generatePlate() : null;
+  var tokens = {
+    color:     _ic_colorFor(incident.objType),
+    direction: _ic_pick(DIRECTIONS),
+    address:   addrStr,
+    street:    realStreet,
+    plate:     plate || '',
+    // Landmark only when something is actually close (≤150m). Otherwise fall
+    // back to the snapped street address — saying "near 234 Beacon Street" is
+    // more accurate than referencing a landmark that's two blocks away.
+    landmark:  lmName || addrStr
+  };
+  var callText = _ic_fill(incident.template, tokens);
+
+  // Phase 2: multi-incident — no longer clear existing before placing
+
+  // Place the bad guy — reuses existing plumbing (snap-to-road, timer, panel, feed)
+  placeBadGuy(pt.lat, pt.lng, incident.objType);
+
+  // Stash incident metadata onto the bad guy for downstream phases
+  if (typeof badGuy !== 'undefined' && badGuy) {
+    badGuy.incidentMeta = {
+      id:       incident.id,
+      label:    incident.label,
+      color:    tokens.color,
+      apparel:  (incident.objType === 'person') ? _ic_pickApparel() : null,
+      plate:    plate,   // null for non-LPR incidents; truthy for lpr_plate
+      subkind:  incident.subkind || null,
+      motion:   incident.motion  || 'moving',
+      callText: callText
+    };
+    // Phase 2: autonomous motion (no joystick)
+    if (incident.motion === 'still') {
+      badGuy.maxSpeed = 0;
+      badGuy.speed = 0;
+    } else {
+      // Vary speed 60-100% of max so the demo doesn't look like every suspect
+      // is sprinting at top speed
+      badGuy.speed = badGuy.maxSpeed * (0.6 + Math.random() * 0.4);
+      badGuy.bearing = Math.random() * 360;  // random heading
+    }
+  }
+
+  _ic_display(incident, callText, tokens);
+  _ic_speak(callText);
+  // Phase 4.2: dispatch alert mirrors the 911 call's metadata exactly so the
+  // operator sees: incident category, color + object, location string actually
+  // used in the call. (renderTaskings card and detector "visual" alerts already
+  // reference incidentMeta.color, so all three are now consistent.)
+  if (typeof badGuy !== 'undefined' && badGuy) {
+    var objNoun = incident.objType === 'car'   ? 'car'
+                : incident.objType === 'bike'  ? 'bicycle'
+                : 'person';
+    var locStr = (incident.template.indexOf('{address}')  >= 0) ? tokens.address
+               : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
+               : (incident.template.indexOf('{landmark}') >= 0) ? tokens.landmark
+               : null;
+    // LPR-eligible incidents lead with plate so the operator sees the LPR
+    // search criterion right in the dispatch alert — the camera mesh can
+    // claim the match when it fires.
+    var lprPrefix = plate ? 'LPR plate <strong>' + plate + '</strong>, ' : '';
+    addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id + ' &mdash; ' + incident.label +
+      '</strong>: ' + lprPrefix + tokens.color + ' ' + objNoun +
+      (locStr ? ' near ' + locStr : '') + '.');
+  }
+  // Re-render taskings now that metadata is set (so card shows description)
+  renderTaskings();
+}
+
+document.getElementById('btn-deploy').onclick = answer911Call;
 document.getElementById('btn-reset').onclick=function(){
-  // Stop movement and clear agents
+  // Phase 2: clear all incidents, return all tasked units to patrol, stop movement
+  clearAllIncidents();
+  // Phase 3: cancel any in-flight acoustic-triangulation viz (lines, crosshair, timers)
+  clearTriangulation();
   stopMovement();
   removeAllAgents();
-  document.getElementById('tpicker').style.display='none';
-  document.getElementById('i-type').textContent='None';
-  document.getElementById('i-type').classList.add('none');
-  document.getElementById('i-loc').textContent='--';
-  document.getElementById('i-loc').classList.add('none');
-  document.getElementById('i-stat').textContent='Standby';
-  document.getElementById('i-stat').classList.add('none');
-  document.getElementById('i-det').textContent='0';
+  var _cd = document.getElementById('call-display');
+  if (_cd) _cd.style.display='none';
   resetTimer(); exitDeploy();
   resetAssetVisibility();
   addAlert('info','Resetting — new random deployment...');

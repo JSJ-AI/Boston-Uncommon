@@ -1,0 +1,227 @@
+From d20751a4aeaedd53a2e5ba1a73ffbc46746cb9b1 Mon Sep 17 00:00:00 2001
+From: Claude Phase 1 <phase1@local>
+Date: Mon, 25 May 2026 13:55:55 +0000
+Subject: [PATCH] Phase 1: autonomous 911 call generator
+
+- Replaces 'Deploy Incident' UI with 'Answer 911 Call' button + call-text display
+- Adds INCIDENT_TYPES table (8 call types: hit-and-run, carjacking, suspicious vehicle, bike snatcher, foot robber, group of youths, person in distress, shots fired)
+- Each call: weighted incident pick + random color (per-object-type weighted dist), direction, address, landmark
+- Spawns BadGuy at random map point via existing placeBadGuy plumbing
+- Reads call script aloud via SpeechSynthesis with randomized English voice
+- Stashes incident metadata on badGuy for Phase 2/3 consumption (label, color, subkind, motion, callText)
+- Stills motion for 'still' incidents (distress, shots fired, suspicious vehicle)
+- Brightens 'Un' in 'Boston Uncommon' logo (color, weight, glow)
+- Reset handler now clears call-display and tolerates removed tpicker element
+---
+ index.html | 170 +++++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 157 insertions(+), 13 deletions(-)
+
+diff --git a/index.html b/index.html
+index a554c29..36260a4 100644
+--- a/index.html
++++ b/index.html
+@@ -273,7 +273,7 @@ body{display:flex;flex-direction:column;}
+ <body>
+ 
+ <div id="topbar">
+-  <div class="logo">Boston <span style="color:#ef4444">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
++  <div class="logo">Boston <span style="color:#ff2d2d;font-weight:700;text-shadow:0 0 6px rgba(255,60,60,0.45);">Un</span>common <span style="font-size:10px;margin-left:6px;color:var(--mut);">SOC SIM v0.1</span></div>
+   <div class="sep"></div>
+   <span class="tlabel">Response&nbsp;Time&nbsp;&nbsp;</span>
+   <div id="timer">00:00</div>
+@@ -290,13 +290,12 @@ body{display:flex;flex-direction:column;}
+       <button class="btn" id="btn-reset" disabled>&#8635; Reset</button>
+     </div>
+     <div class="ps">
+-      <span class="psl">Deploy Incident</span>
+-      <button class="btn bd" id="btn-deploy" disabled>&#9760; Deploy 911 Incident</button>
+-      <div id="tpicker" style="display:none;margin-top:8px;">
+-        <span class="psl">Incident Type</span>
+-        <button class="btn bd" onclick="pickType('car')">&#128663; Red Car</button>
+-        <button class="btn bd" onclick="pickType('bike')">&#128690; Red Bike</button>
+-        <button class="btn bd" onclick="pickType('person')">&#128694; Red Person</button>
++      <span class="psl">911 Dispatch</span>
++      <button class="btn bd" id="btn-deploy" disabled>&#128222; Answer 911 Call</button>
++      <div id="call-display" style="display:none;margin-top:10px;font-size:11px;line-height:1.5;background:rgba(0,0,0,0.25);border-left:3px solid var(--bad);padding:9px 10px;border-radius:3px;">
++        <div id="call-label" style="font-weight:600;color:var(--bad);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;"></div>
++        <div id="call-body" style="color:var(--ink);font-style:italic;"></div>
++        <div id="call-meta" style="font-size:9px;color:var(--mut);margin-top:6px;text-transform:uppercase;letter-spacing:0.3px;"></div>
+       </div>
+     </div>
+     <div class="ps">
+@@ -557,7 +556,8 @@ function stopSensorFeed() {
+ // ── DEPLOY ───────────────────────────────────────────────────────────────────
+ function pickType(type){
+   pendingType=type;
+-  document.getElementById('tpicker').style.display='none';
++  var _tp = document.getElementById('tpicker');
++  if (_tp) _tp.style.display='none';
+   deployMode=true;
+   document.getElementById('map').classList.add('deploy');
+   document.getElementById('dbanner').classList.add('show');
+@@ -2292,14 +2292,158 @@ document.getElementById('btn-start').onclick=function(){
+   addAlert('ok','<strong>Scenario started.</strong> Deploying 3 drones, 10 vehicles, 10 bikes, 10 officers...');
+   placeAgents();
+ };
+-document.getElementById('btn-deploy').onclick=function(){
+-  document.getElementById('tpicker').style.display='block';
+-};
++// ── 911 CALL INCIDENT GENERATOR (Phase 1) ────────────────────────────────────
++// Auto-generates a random incident from a curated table on button click.
++// Spawns a BadGuy of the appropriate type at a random map point, fills the
++// 911 call display panel with a templated script, and reads it aloud via TTS.
++
++var INCIDENT_TYPES = [
++  { id:'hit_run',     label:'Hit and run',                  objType:'car',    weight:3,
++    template:"Hello, yes, I need to report a hit and run. A {color} sedan just sideswiped a vehicle near {address}. They're heading {direction}. Please send someone." },
++  { id:'carjack',     label:'Carjacking in progress',       objType:'car',    weight:1,
++    template:"Nine-one-one, there's a carjacking happening near {address}. The suspect took off in a {color} car going {direction}." },
++  { id:'sus_vehicle', label:'Suspicious vehicle',           objType:'car',    weight:2,
++    template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
++  { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
++    template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
++  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
++    template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
++  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group',
++    template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
++  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
++    template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
++  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
++    template:"I just heard three or four gunshots from somewhere near {landmark}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
++];
++
++var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
++var SHIRT_COLORS = [['blue',18],['black',18],['white',15],['gray',12],['red',10],['green',8],['yellow',5],['orange',5],['brown',5],['purple',4]];
++var BIKE_COLORS  = [['black',30],['silver',15],['blue',15],['red',12],['white',10],['green',8],['yellow',5],['orange',5]];
++
++var BOSTON_STREETS   = ['Boylston Street','Tremont Street','Charles Street','Beacon Street','Park Street','Arlington Street','Berkeley Street','Clarendon Street','Newbury Street','Commonwealth Avenue','Stuart Street','Washington Street'];
++var BOSTON_LANDMARKS = ['the Frog Pond','the Park Street T entrance','the Public Garden','the State House','the Common bandstand','the Brewer Fountain','the Boylston T entrance','Government Center','the Soldiers Monument','Beacon Hill'];
++var DIRECTIONS       = ['north','south','east','west','northbound on Tremont','southbound on Charles','eastbound on Boylston','westbound on Beacon','toward Government Center','toward the Common'];
++
++function _ic_wpick(arr) {
++  var t = 0; for (var i=0;i<arr.length;i++) t += arr[i][1];
++  var r = Math.random() * t;
++  for (var j=0;j<arr.length;j++) { r -= arr[j][1]; if (r <= 0) return arr[j][0]; }
++  return arr[0][0];
++}
++function _ic_pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
++
++function _ic_colorFor(objType) {
++  if (objType === 'car')  return _ic_wpick(CAR_COLORS);
++  if (objType === 'bike') return _ic_wpick(BIKE_COLORS);
++  return _ic_wpick(SHIRT_COLORS);
++}
++
++function _ic_randomMapPoint() {
++  // Interior of operational area (BBOX 42.338,-71.090,42.373,-71.042)
++  var latMin = 42.345, latMax = 42.365;
++  var lngMin = -71.082, lngMax = -71.050;
++  return { lat: latMin + Math.random()*(latMax-latMin),
++           lng: lngMin + Math.random()*(lngMax-lngMin) };
++}
++
++function _ic_randomAddress() {
++  var num = 100 + Math.floor(Math.random() * 800);
++  return num + ' ' + _ic_pick(BOSTON_STREETS);
++}
++
++function _ic_fill(tpl, tokens) {
++  return tpl.replace(/\{(\w+)\}/g, function(_, k) {
++    return (tokens[k] != null) ? tokens[k] : ('{' + k + '}');
++  });
++}
++
++function _ic_pickIncident() {
++  var weighted = INCIDENT_TYPES.map(function(i) { return [i, i.weight || 1]; });
++  return _ic_wpick(weighted);
++}
++
++function _ic_speak(text) {
++  if (typeof window.speechSynthesis === 'undefined') return;
++  try {
++    window.speechSynthesis.cancel();
++    var voices = window.speechSynthesis.getVoices().filter(function(v) {
++      return v.lang && v.lang.toLowerCase().indexOf('en') === 0;
++    });
++    var utt = new SpeechSynthesisUtterance(text);
++    if (voices.length > 0) {
++      utt.voice = voices[Math.floor(Math.random()*voices.length)];
++    }
++    utt.rate  = 0.95 + Math.random()*0.1;
++    utt.pitch = 0.9  + Math.random()*0.2;
++    window.speechSynthesis.speak(utt);
++  } catch(e) { /* swallow */ }
++}
++
++function _ic_display(incident, text, tokens) {
++  var disp  = document.getElementById('call-display');
++  var label = document.getElementById('call-label');
++  var body  = document.getElementById('call-body');
++  var meta  = document.getElementById('call-meta');
++  if (!disp || !label || !body) return;
++  disp.style.display = 'block';
++  label.textContent = incident.label;
++  body.textContent  = '"' + text + '"';
++  if (meta) {
++    meta.textContent = 'Search criteria: ' + incident.objType + ' / ' + tokens.color;
++  }
++}
++
++function answer911Call() {
++  if (!scenarioOn) {
++    addAlert('warn', 'Start scenario before answering 911 calls.');
++    return;
++  }
++  var incident = _ic_pickIncident();
++  var tokens = {
++    color:     _ic_colorFor(incident.objType),
++    direction: _ic_pick(DIRECTIONS),
++    address:   _ic_randomAddress(),
++    street:    _ic_pick(BOSTON_STREETS),
++    landmark:  _ic_pick(BOSTON_LANDMARKS)
++  };
++  var callText = _ic_fill(incident.template, tokens);
++  var pt = _ic_randomMapPoint();
++
++  // Phase 1: single bad guy. Clear any existing one first.
++  if (typeof badGuy !== 'undefined' && badGuy) {
++    clearIncident();
++  }
++
++  // Place the bad guy — reuses existing plumbing (snap-to-road, timer, panel, feed)
++  placeBadGuy(pt.lat, pt.lng, incident.objType);
++
++  // Stash incident metadata onto the bad guy for downstream phases
++  if (typeof badGuy !== 'undefined' && badGuy) {
++    badGuy.incidentMeta = {
++      id:       incident.id,
++      label:    incident.label,
++      color:    tokens.color,
++      subkind:  incident.subkind || null,
++      motion:   incident.motion  || 'moving',
++      callText: callText
++    };
++    // If incident is "still" (distress, shots fired, suspicious vehicle), freeze motion
++    if (incident.motion === 'still') {
++      badGuy.maxSpeed = 0;
++    }
++  }
++
++  _ic_display(incident, callText, tokens);
++  _ic_speak(callText);
++}
++
++document.getElementById('btn-deploy').onclick = answer911Call;
+ document.getElementById('btn-reset').onclick=function(){
+   // Stop movement and clear agents
+   stopMovement();
+   removeAllAgents();
+-  document.getElementById('tpicker').style.display='none';
++  var _cd = document.getElementById('call-display');
++  if (_cd) _cd.style.display='none';
+   document.getElementById('i-type').textContent='None';
+   document.getElementById('i-type').classList.add('none');
+   document.getElementById('i-loc').textContent='--';
+-- 
+2.43.0
+
