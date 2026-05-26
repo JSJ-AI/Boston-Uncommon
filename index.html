@@ -527,7 +527,7 @@ window.addEventListener('load', function() {
     document.getElementById('rdstat').textContent = 'Road network: ready';
     document.getElementById('rdstat').style.color = '#22c55e';
     addAlert('info', 'Map grid online. Boston Common 5-mile operational area active.');
-    addAlert('info', 'Click <strong>Start Scenario</strong> to deploy units.');
+    addAlert('info', 'Click <strong>Answer 911 Call</strong> to spawn an incident.');
     loadRoadNetwork();
   });
 
@@ -4051,7 +4051,7 @@ function _ic_display(incident, text, tokens) {
 
 function answer911Call() {
   if (!scenarioOn) {
-    addAlert('warn', 'Start scenario before answering 911 calls.');
+    addAlert('warn', 'Scenario not active yet — wait a moment for the system to finish loading.');
     return;
   }
   var incident = _ic_pickIncident();
