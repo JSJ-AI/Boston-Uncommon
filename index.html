@@ -1148,6 +1148,21 @@ function resetAssetVisibility() {
 // 700m listening radius chosen so 3+ mics hear any point (triangulation coverage)
 // Cell size ~780×660m, diagonal ~1020m → 700m reach covers own cell + neighbors
 var MIC_CONFIG  = { color:'#ec4899', radius:700, rows:4, cols:5 };
+// Hot-spot mic POIs — hand-placed at high-foot-traffic Boston locations
+// that fall in coverage gaps of the mechanical 4×5 grid. With grid spacing
+// roughly 660-780m and TRI_QUALITY_RADIUS=400m for clean triangulation,
+// the grid alone leaves much of central Boston (especially around the
+// Common) without 3-mic overlap. Coordinates verified from Google Places.
+// Added after the grid in placeMics(), giving 20 + 7 = 27 total mics.
+var POI_MICS = [
+  { lat: 42.3563, lon: -71.0624, name: 'Park Street T' },        // Boston Common center
+  { lat: 42.3541, lon: -71.0701, name: 'Public Garden' },        // Common SW adjacent
+  { lat: 42.3588, lon: -71.0638, name: 'MA State House' },       // Common N edge / Beacon Hill
+  { lat: 42.3612, lon: -71.0705, name: 'Charles/MGH' },          // NW gap
+  { lat: 42.3555, lon: -71.0594, name: 'Downtown Crossing' },    // central business district
+  { lat: 42.3602, lon: -71.0551, name: 'Faneuil Hall' },         // east-edge / tourist area
+  { lat: 42.3504, lon: -71.0654, name: 'Theater District' }      // south of Common (Shubert)
+];
 var mics        = [];
 
 // ── ROAD GRAPH ────────────────────────────────────────────────────────────────
@@ -2950,7 +2965,10 @@ function updateCameraCounts() {
   updateAssetCounts();
 }
 
-// ── ACOUSTIC MIC MESH (20 mics in grid, collision-avoided from existing icons) ─
+// ── ACOUSTIC MIC MESH (4×5 grid + 7 POI hot-spots = 27 mics) ────────────────
+// Grid provides ambient coverage; POI mics (defined in POI_MICS above) fill
+// known gaps around Boston Common, Beacon Hill, Theater District, and the
+// east-side tourist corridor.
 function setupMicMeshLayer() {
   map.addSource('mic-mesh', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
   // Below the camera FOV layer so it doesn't obscure cameras
@@ -3035,6 +3053,31 @@ function placeMics() {
       mics.push({ id: mics.length + 1, lat: lat, lon: lon, marker: marker, el: el });
     }
   }
+  // POI hot-spot mics — added after the grid to fill known coverage gaps
+  // around Boston Common, Beacon Hill, the Theater District, and the
+  // east-side tourist corridor. Same visual style as grid mics; collision
+  // avoidance pushes them away from cameras/agents if needed.
+  POI_MICS.forEach(function(poi) {
+    var lat = poi.lat, lon = poi.lon;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      var probe = nearestIconDist(lat, lon);
+      if (probe.dist > COLLISION_M) break;
+      var dy = lat - probe.blocker.lat;
+      var dx = lon - probe.blocker.lon;
+      var mag = Math.sqrt(dx*dx + dy*dy) || 0.00001;
+      lat += (dy / mag) * 0.0006;
+      lon += (dx / mag) * 0.0006;
+    }
+    var el = document.createElement('div');
+    el.style.cssText = 'cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));';
+    el.innerHTML = makeMicSVG(MIC_CONFIG.color);
+    var idx = mics.length + 1;
+    el.title = 'Mic #' + idx + ' — ' + poi.name;
+    var marker = new maplibregl.Marker({ element: el, anchor:'center' })
+      .setLngLat([lon, lat]).addTo(map);
+    if (!assetVisibility.mics) el.style.display = 'none';
+    mics.push({ id: idx, lat: lat, lon: lon, marker: marker, el: el, poi: poi.name });
+  });
   updateMicMesh();
   // Mics default to OFF; alert fires only when the user toggles them on.
 }
