@@ -771,10 +771,13 @@ function dispatchToIncident(bg) {
     });
     best.taskedTo = bg.id;
     best.status = 'pursuing';
-    // Reset bearing-flip state — a legitimate dispatch direction change isn't oscillation
+    // Reset bearing-flip and jump state — a legitimate dispatch direction
+    // change isn't oscillation, and jumps from the previous task shouldn't
+    // count toward the new one.
     best._lastBearing = null;
     best._flipCount   = 0;
     best._commitUntil = 0;
+    best._jumpCount   = 0;
     best.targetNode = best._pickPursuitTarget();
     best.pauseUntil = 0;
     // Visual: the tasked unit's icon pulses brighter with an orange glow.
@@ -818,10 +821,11 @@ function returnFromTasking(agent) {
     agent.taskedTo = bestBg.id;
     agent.status   = 'pursuing';
     agent.pauseUntil = 0;
-    // Reset bearing-flip state — a reassignment U-turn isn't oscillation
+    // Reset bearing-flip and jump state — a reassignment U-turn isn't oscillation
     agent._lastBearing = null;
     agent._flipCount   = 0;
     agent._commitUntil = 0;
+    agent._jumpCount   = 0;
     if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
     bestBg.taskedUnits[agent.type] = agent;
     // Keep the tasked glow
@@ -835,10 +839,11 @@ function returnFromTasking(agent) {
   }
   // Otherwise: actually return to patrol
   agent.status = 'patrol';
-  // Reset flip state on return-to-patrol too — fresh start
+  // Reset flip and jump state on return-to-patrol too — fresh start
   agent._lastBearing = null;
   agent._flipCount   = 0;
   agent._commitUntil = 0;
+  agent._jumpCount   = 0;
   if (agent.marker && agent.marker._element) {
     agent.marker._element.classList.remove('agent-tasked-glow');
   }
@@ -1152,6 +1157,14 @@ var ALLOWED_HIGHWAYS = {
   drone:   null // aerial — no restriction
 };
 
+// Highway types SUSPECTS spawn on. Tighter than ALLOWED_HIGHWAYS.car — every
+// named city street where a 911 call realistically originates, nothing else.
+// Excludes motorway/trunk (sim doesn't care about expressway incidents),
+// *_link ramps (not pedestrian-realistic), and service roads (driveways,
+// parking aisles, alley access — the source of "in a back lot somewhere"
+// spawns where ground units physically can't get to the suspect).
+var SPAWN_HIGHWAYS = /^(primary|secondary|tertiary|residential|unclassified)$/;
+
 function buildGraph(data) {
   var nodes = {};
   roadGraph.wayNames = {}; // wayId -> street name from OSM 'name' tag
@@ -1198,6 +1211,20 @@ function buildGraph(data) {
   });
   // Drone can use any node
   roadGraph.nodesByType['drone'] = roadGraph.nodeIds;
+
+  // Spawn pool: tighter than nodesByType.car — only nodes on real city streets
+  // (primary/secondary/tertiary/residential/unclassified), so suspect spawns
+  // never land on highway ramps, service roads, or alley fragments that
+  // ground units can't sensibly reach.
+  roadGraph.spawnNodes = roadGraph.nodeIds.filter(function(nid) {
+    var n = nodes[nid];
+    if (!n || !n.neighborHW) return false;
+    return Object.keys(n.neighborHW).some(function(nb) {
+      var info = n.neighborHW[nb];
+      var hw = info && info.hw ? info.hw : info;
+      return SPAWN_HIGHWAYS.test(hw);
+    });
+  });
 
   return roadGraph.nodeIds.length;
 }
@@ -1629,6 +1656,8 @@ function Agent(id, type, lat, lon, pt) {
   this._lastBearing = null;
   this._flipCount   = 0;
   this._commitUntil = 0;
+  // Forward-jump consecutive counter — reset on legitimate movement progress
+  this._jumpCount   = 0;
   // Per-suspect FOV flag: { [bgId]: true } when this agent has the bg in cone.
   // Refreshed each tick by checkDetection. handleOscillation reads this.
   this._inFovOf     = {};
@@ -2081,6 +2110,7 @@ var FLIP_ANGLE_DEG   = 150;      // bearing change above this counts as a flip
 var COMMIT_MS        = 3000;     // forward-only window after intervention
 var STUCK_RADIUS_M   = 8;        // movement less than this = not moving
 var BRUTE_FORCE_MS   = 10000;    // 10s without movement = brute-force relocate
+var JUMP_MAX_CONSECUTIVE = 3;    // max consecutive forward-jumps before fall-back to untask
 
 // Angular difference in degrees, 0..180.
 function angularDiff(a, b) {
@@ -2176,6 +2206,7 @@ function relocateAgentSilent(a) {
   a._lastBearing = null;
   a._flipCount   = 0;
   a._commitUntil = 0;
+  a._jumpCount   = 0;
   a._stuckRef    = null;
   if (a.marker) a.marker.setLngLat([a.lon, a.lat]);
   if (a.updateMarker) a.updateMarker();
@@ -2215,6 +2246,7 @@ function untaskBackfillRelocate(agent) {
       best._lastBearing = null;
       best._flipCount   = 0;
       best._commitUntil = 0;
+      best._jumpCount   = 0;
       if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
       if (best.marker && best.marker._element) {
         best.marker._element.classList.add('agent-tasked-glow');
@@ -2226,22 +2258,94 @@ function untaskBackfillRelocate(agent) {
   if (typeof renderTaskings === 'function') renderTaskings();
 }
 
-// Triggered when the bearing-flip detector hits FLIP_THRESHOLD. Stops the
-// agent first, then branches: if currently in FOV of its tasked suspect,
-// becomes a stationary 'observing' unit (still produces CV detections);
-// otherwise gets untasked, backfilled, and silently relocated.
+// Directed silent teleport along the agent's traversable road pool toward
+// its tasked suspect. Used by handleOscillation when an agent is oscillating
+// without FOV — instead of giving up the pursuit (untask+backfill), shove the
+// agent past the apparent path block by half the remaining distance to the
+// target. Preserves taskedTo, status='pursuing', and all incident binding.
+// Returns true if a viable jump node was found and the agent was moved.
+function jumpTowardTarget(agent) {
+  if (!agent.taskedTo) return false;
+  var bg = targetFor(agent);
+  if (!bg || !bg.active) return false;
+  var pool = (roadGraph.nodesByType && roadGraph.nodesByType[agent.type])
+           || roadGraph.nodeIds;
+  if (!pool || !pool.length) return false;
+  var distNow = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
+  if (distNow < 30) return false;   // already on top of the suspect
+  // Aim for a node ~half the remaining distance closer to bg.
+  var targetCloser = distNow * 0.5;
+  var bestNode = null, bestScore = Infinity;
+  for (var i = 0; i < pool.length; i++) {
+    var n = roadGraph.nodes[pool[i]];
+    if (!n) continue;
+    var dToBg      = haversineM(n.lat, n.lon, bg.lat, bg.lon);
+    var dFromAgent = haversineM(n.lat, n.lon, agent.lat, agent.lon);
+    // Must actually be closer to bg (not just sideways)
+    if (dToBg >= distNow * 0.85) continue;
+    // Don't allow wild teleports — cap jump size at 85% of remaining distance
+    if (dFromAgent > distNow * 0.85) continue;
+    // Prefer nodes near (distNow - targetCloser) from bg AND around
+    // targetCloser away from agent. The Math.abs balances both constraints.
+    var score = Math.abs(dToBg - (distNow - targetCloser)) +
+                Math.abs(dFromAgent - targetCloser) * 0.5;
+    if (score < bestScore) { bestScore = score; bestNode = pool[i]; }
+  }
+  if (!bestNode) return false;
+  var node = roadGraph.nodes[bestNode];
+  agent.lat          = node.lat;
+  agent.lon          = node.lon;
+  agent.currentNode  = bestNode;
+  agent.prevNode     = null;
+  agent.targetNode   = null;
+  agent._pursuitPath = null;
+  agent._pursuitGoal = null;
+  agent._pursuitSp   = null;
+  agent._lastBearing = null;
+  agent._flipCount   = 0;
+  agent._commitUntil = 0;
+  agent._stuckRef    = null;
+  // Pick a fresh pursuit target from the new position
+  agent.targetNode = agent._pickPursuitTarget();
+  if (agent.marker) agent.marker.setLngLat([agent.lon, agent.lat]);
+  if (agent.updateMarker) agent.updateMarker();
+  return true;
+}
+
+// Triggered when the bearing-flip detector hits FLIP_THRESHOLD. Branches:
+//   FOV on tasked suspect → become stationary 'observing' (no jump, no
+//     relocation; the unit's CV detection is the simulation's actual goal).
+//   No FOV, still tasked → try jumpTowardTarget first (preserves pursuit by
+//     teleporting past the path block). After JUMP_MAX_CONSECUTIVE failed
+//     attempts, fall back to untaskBackfillRelocate so we don't loop forever.
+//   Patrolling → silent random relocate.
+// Drones are excluded from clearing/capture independently — that's enforced
+// in checkIncidentArrival, which never lists drone among the close-trigger
+// unit types. This handler treats drones the same as ground units for
+// oscillation suppression (they can also get stuck and benefit from a jump
+// or relocation).
 function handleOscillation(agent) {
   agent._commitUntil = Date.now() + COMMIT_MS;
   var wasPursuing = (agent.status === 'pursuing' && agent.taskedTo);
   var hasFov      = wasPursuing && agent._inFovOf && agent._inFovOf[agent.taskedTo];
   if (wasPursuing && hasFov) {
-    // Stationary observer — keep tasked, keep producing detections, stop moving
+    // FOV-observer: freeze in place, no jump, no relocate
     agent.status     = 'observing';
     agent.speed      = 0;
     agent.targetNode = null;
+    agent._jumpCount = 0;
   } else if (wasPursuing) {
-    untaskBackfillRelocate(agent);
+    // No FOV — try jumping forward toward target. After JUMP_MAX_CONSECUTIVE
+    // jumps without breaking out, give up and untask+backfill.
+    agent._jumpCount = (agent._jumpCount || 0) + 1;
+    if (agent._jumpCount <= JUMP_MAX_CONSECUTIVE && jumpTowardTarget(agent)) {
+      // jumped — agent retains taskedTo and continues pursuing from new spot
+    } else {
+      agent._jumpCount = 0;
+      untaskBackfillRelocate(agent);
+    }
   } else {
+    // Patrol oscillation — silent random relocate
     relocateAgentSilent(agent);
   }
 }
@@ -2267,7 +2371,9 @@ function checkStuckAgents() {
     }
     var d = haversineM(a.lat, a.lon, a._stuckRef.lat, a._stuckRef.lon);
     if (d > STUCK_RADIUS_M) {
-      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      // Moved enough — reset stuck reference and the consecutive-jump counter
+      a._stuckRef  = { lat: a.lat, lon: a.lon, since: now };
+      a._jumpCount = 0;
       return;
     }
     // Pursuit hold (within 30m of suspect) is a legitimate stop
@@ -3644,19 +3750,19 @@ function _ic_colorFor(objType) {
 }
 
 function _ic_randomMapPoint() {
-  // Pick a random road-graph node a car can traverse. Cars have the most
-  // restrictive ALLOWED_HIGHWAYS filter, so any car-accessible node is also
-  // reachable by bikes and officers — every spawn is guaranteed reachable by
-  // every unit type. Eliminates suspect spawns inside buildings or on
-  // pedestrian-only paths that some unit types can't get to. Falls back to a
-  // bbox-uniform random pick if the road network hasn't loaded yet.
-  if (!roadGraph || !roadGraph.nodesByType || !roadGraph.nodesByType.car) {
+  // Pick a random road-graph node from the SPAWN_HIGHWAYS tier — every
+  // named city street (primary/secondary/tertiary/residential/unclassified).
+  // Tighter than the car-traversal pool, so suspects never land on highway
+  // ramps, service driveways, or alley fragments that ground units can't
+  // sensibly reach. Falls back to a bbox-uniform random pick if the road
+  // network hasn't loaded yet.
+  if (!roadGraph || !roadGraph.spawnNodes || !roadGraph.spawnNodes.length) {
     return {
       lat: 42.345 + Math.random() * (42.365 - 42.345),
       lng: -71.082 + Math.random() * ((-71.050) - (-71.082))
     };
   }
-  var pool = roadGraph.nodesByType.car;
+  var pool = roadGraph.spawnNodes;
   var inBounds = [];
   for (var i = 0; i < pool.length; i++) {
     var n = roadGraph.nodes[pool[i]];
