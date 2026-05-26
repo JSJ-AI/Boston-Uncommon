@@ -1880,14 +1880,18 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
-  // Pursuit hold: stop moving once the agent is at the scene. Without this,
-  // A* keeps recomputing the path as the search position drifts a few metres
-  // and the agent oscillates back and forth between adjacent road nodes.
+  // Pursuit hold: stop moving once the agent is at the scene. Reference is the
+  // suspect's TRUE position (holdTgt.lat/lon), not searchPos — searchPos can be
+  // stale between detections, and using it would lock the agent onto a stale
+  // point, then yank it elsewhere when searchPos updates → back-and-forth
+  // oscillation. A unit within 30m of a suspect would see them with its own
+  // eyes regardless of detection state, so true-position is the right reference.
+  // Also aligns with the arrival freeze in checkIncidentArrival, which already
+  // measures distance to bg.lat/lon.
   if (agent.status === 'pursuing' && agent.taskedTo) {
     var holdTgt = targetFor(agent);
     if (holdTgt && holdTgt.active) {
-      var holdSp = searchPos(holdTgt);
-      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < 30) {
+      if (haversineM(agent.lat, agent.lon, holdTgt.lat, holdTgt.lon) < 30) {
         agent.updateMarker && agent.updateMarker();
         return;
       }
