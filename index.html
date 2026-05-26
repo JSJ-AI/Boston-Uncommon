@@ -3796,7 +3796,7 @@ document.getElementById('btn-start').onclick=function(){
 // 911 call display panel with a templated script, and reads it aloud via TTS.
 
 var INCIDENT_TYPES = [
-  { id:'hit_run',     label:'Hit and run',                  objType:'car',    weight:3,
+  { id:'hit_run',     label:'Hit and run',                  objType:'car',    weight:2,
     template:"Hello, yes, I need to report a hit and run. A {color} sedan just sideswiped a vehicle near {address}. They're heading {direction}. Please send someone." },
   { id:'carjack',     label:'Carjacking in progress',       objType:'car',    weight:1,
     template:"Nine-one-one, there's a carjacking happening near {address}. The suspect took off in a {color} car going {direction}." },
@@ -3988,23 +3988,30 @@ function answer911Call() {
       addAlert('warn', 'Acoustic event dropped — road network not loaded yet.');
       return;
     }
+    // If mics aren't usable at all, drop immediately — no point retrying.
+    if (!assetVisibility.mics) {
+      addAlert('warn', '🔇 Acoustic event dropped — mic mesh offline.');
+      return;
+    }
+    if (!mics.length) {
+      addAlert('warn', '🔇 Acoustic event dropped — mic mesh still warming up.');
+      return;
+    }
+    // Find an origin that (a) resolves to a street name AND (b) has 3+ mics
+    // within TRI_QUALITY_RADIUS for clean triangulation. With mics in a
+    // 4×5 grid spaced ~700×520m and a 400m quality threshold, random points
+    // often fall in coverage gaps — so retry until we find a viable spot.
     var origin = null;
-    for (var tries = 0; tries < 5 && !origin; tries++) {
+    for (var tries = 0; tries < 20 && !origin; tries++) {
       var cand = _ic_randomMapPoint();
       var snapped = snapToRoad(cand.lat, cand.lng, 'person');
       cand.lat = snapped.lat; cand.lng = snapped.lon;
-      if (streetNameAtNode(nearestNode(cand.lat, cand.lng))) origin = cand;
+      if (!streetNameAtNode(nearestNode(cand.lat, cand.lng))) continue;
+      if (!canTriangulate(cand.lat, cand.lng)) continue;
+      origin = cand;
     }
     if (!origin) {
-      addAlert('warn', 'Acoustic event dropped — could not resolve a street address for origin.');
-      return;
-    }
-    if (!canTriangulate(origin.lat, origin.lng)) {
-      var why;
-      if (!assetVisibility.mics)   why = 'mic mesh offline';
-      else if (!mics.length)        why = 'mic mesh still warming up';
-      else                          why = '<3 mics within ' + TRI_QUALITY_RADIUS + 'm of origin';
-      addAlert('warn', '🔇 Acoustic event detected but coverage insufficient — ' + why + '. No triangulation.');
+      addAlert('warn', '🔇 Acoustic event dropped — no spot in the operational area has both a street address and ≥3 mics within ' + TRI_QUALITY_RADIUS + 'm. Check mic placement / coverage.');
       return;
     }
     addAlert('warn', '🔊 <strong>Acoustic event detected</strong> — triangulating across mic mesh...');
