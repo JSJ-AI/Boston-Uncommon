@@ -1369,19 +1369,19 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
   return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
 }
 
-// Try a static JSON file under ./cache/ first — bulletproof local fallback.
-// If the deployer has uploaded cache/{name}.json alongside index.html (e.g.,
-// in the GitHub repo), this returns the cached data instantly without ever
-// touching Overpass. Returns null on any failure (file not deployed, network
-// down, parse error), and the caller falls through to the live Overpass path.
+// Try a static JSON file shipped alongside index.html — bulletproof local
+// fallback. Probes ./cache/{name}.json first (organized layout), then
+// ./{name}.json (root-level layout). Either deployment style works.
+// Returns null on any failure and the caller falls through to live Overpass.
 async function _tryLocalStatic(filename) {
-  try {
-    var r = await fetch('./cache/' + filename, { cache: 'no-cache' });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch(e) {
-    return null;
+  var prefixes = ['./cache/', './'];
+  for (var i = 0; i < prefixes.length; i++) {
+    try {
+      var r = await fetch(prefixes[i] + filename, { cache: 'no-cache' });
+      if (r.ok) return await r.json();
+    } catch(e) { /* try next prefix */ }
   }
+  return null;
 }
 
 async function fetchOverpass(mirrorIdx) {
