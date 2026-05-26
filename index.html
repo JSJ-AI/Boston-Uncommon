@@ -771,6 +771,10 @@ function dispatchToIncident(bg) {
     });
     best.taskedTo = bg.id;
     best.status = 'pursuing';
+    // Reset bearing-flip state — a legitimate dispatch direction change isn't oscillation
+    best._lastBearing = null;
+    best._flipCount   = 0;
+    best._commitUntil = 0;
     best.targetNode = best._pickPursuitTarget();
     best.pauseUntil = 0;
     // Visual: the tasked unit's icon pulses brighter with an orange glow.
@@ -814,6 +818,10 @@ function returnFromTasking(agent) {
     agent.taskedTo = bestBg.id;
     agent.status   = 'pursuing';
     agent.pauseUntil = 0;
+    // Reset bearing-flip state — a reassignment U-turn isn't oscillation
+    agent._lastBearing = null;
+    agent._flipCount   = 0;
+    agent._commitUntil = 0;
     if (agent.type !== 'drone') agent.targetNode = agent._pickPursuitTarget();
     bestBg.taskedUnits[agent.type] = agent;
     // Keep the tasked glow
@@ -827,6 +835,10 @@ function returnFromTasking(agent) {
   }
   // Otherwise: actually return to patrol
   agent.status = 'patrol';
+  // Reset flip state on return-to-patrol too — fresh start
+  agent._lastBearing = null;
+  agent._flipCount   = 0;
+  agent._commitUntil = 0;
   if (agent.marker && agent.marker._element) {
     agent.marker._element.classList.remove('agent-tasked-glow');
   }
@@ -1613,6 +1625,15 @@ function Agent(id, type, lat, lon, pt) {
   this.currentWayId = null;  // OSM way agent is currently following
   this.lastTurnTime = 0;
   this.pauseUntil   = 0;
+  // Bearing-flip detector state (see OSCILLATION SUPPRESSION section)
+  this._lastBearing = null;
+  this._flipCount   = 0;
+  this._commitUntil = 0;
+  // Per-suspect FOV flag: { [bgId]: true } when this agent has the bg in cone.
+  // Refreshed each tick by checkDetection. handleOscillation reads this.
+  this._inFovOf     = {};
+  // Brute-force backstop reference (lazy-init in checkStuckAgents)
+  this._stuckRef    = null;
   this.targetNode   = this._pickTarget();
 }
 
@@ -1876,10 +1897,8 @@ function tick() {
       if (el) el.style.opacity = (divergence < 20) ? '0.25' : '1';
     }
   });
-  // Brute-force unstick: every 4 ticks (2s) check whether any agent hasn't
-  // physically moved more than STUCK_RADIUS_M in STUCK_TIMEOUT_MS, and if so
-  // teleport it somewhere fresh. Safety net when logic can't get the unit
-  // out of a graph dead-end or disjoint-graph trap.
+  // Oscillation suppression + brute-force unstick — every 4 ticks (2s).
+  // See the OSCILLATION SUPPRESSION block below for the full mechanism.
   if (tickCount % 4 === 0) checkStuckAgents();
   tickCount++;
   updateFOV();
@@ -1889,6 +1908,12 @@ function tick() {
 }
 
 function moveAgent(agent) {
+  // Observing agents are stationary by design — keep their FOV active but
+  // don't try to move them. They still produce CV detections via checkDetection.
+  if (agent.status === 'observing') {
+    agent.updateMarker();
+    return;
+  }
   // Pursuit mode: 50% speed boost
   // Pursuit speed multiplier — units in pursuit go significantly faster than
   // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
@@ -1935,7 +1960,7 @@ function moveRoadAgent(agent, remainDist) {
   for (var h = 0; h < MAX_HOPS && remainDist > 0.5; h++) {
 
     if (!agent.targetNode || !roadGraph.nodes[agent.targetNode]) {
-      agent.targetNode = agent._pickTarget();
+      agent.targetNode = pickWithFlipGuard(agent, function() { return agent._pickTarget(); });
       if (!agent.targetNode) break;
     }
 
@@ -1958,7 +1983,9 @@ function moveRoadAgent(agent, remainDist) {
         agent.currentWayId = edgeInfo2.wayId || agent.currentWayId;
       }
       agent.pauseUntil  = Date.now() + 3000;
-      agent.targetNode  = agent.status==='pursuing' ? agent._pickPursuitTarget() : agent._pickTarget();
+      agent.targetNode  = pickWithFlipGuard(agent, function() {
+        return agent.status==='pursuing' ? agent._pickPursuitTarget() : agent._pickTarget();
+      });
       remainDist -= distToTarget;
       break; // pause takes effect next tick
     } else {
@@ -2028,104 +2055,153 @@ function moveDrone(agent, dist) {
   agent.lon = newLon;
 }
 
-// ── BRUTE-FORCE UNSTICK ──────────────────────────────────────────────────────
-// Safety net for agents that get geometrically trapped (disjoint road graphs,
-// nameless edge nodes, dead-end pockets that fail the no-backtrack rule, A*
-// goal nodes unreachable in the agent's allowed-highway subgraph). If logic
-// can't move them, teleport them.
+// ── OSCILLATION SUPPRESSION + STUCK FALLBACK ─────────────────────────────────
+// Two layered, silent mechanisms.
 //
-// Detection: each agent stores a reference (lat, lon, since-timestamp). On
-// each check, if the agent has moved >STUCK_RADIUS_M from the reference, the
-// reference is reset to "here, now". If it hasn't moved that far in
-// STUCK_TIMEOUT_MS, the agent is considered stuck and relocated.
+//   1. BEARING-FLIP DETECTOR. Every target-pick decision compares the new
+//      bearing to the previous bearing. Three consecutive ~180° flips at
+//      consecutive picks means the agent is oscillating. The handler stops
+//      it: if it currently has FOV on its tasked suspect it becomes a
+//      stationary observer (still produces CV detections); otherwise it gets
+//      untasked, a fresh unit of the same type is backfilled, and the
+//      original is silently relocated to a fresh road point.
 //
-// Exclusions: captured agents, and pursuing agents legitimately holding within
-// 30m of their suspect — both are "not moving" but for valid reasons.
-var STUCK_RADIUS_M   = 8;     // moved less than this = not moving
-var STUCK_TIMEOUT_MS = 20000; // 20s without movement = stuck
+//   2. BRUTE-FORCE BACKSTOP. Per-tick position check. If an agent hasn't
+//      moved STUCK_RADIUS_M in BRUTE_FORCE_MS and isn't legitimately holding
+//      (pursuit hold within 30m, observing, captured), it's relocated
+//      silently. Catches agents that escape the bearing detector — e.g.
+//      jittering on a single edge without ever arriving at a node to trigger
+//      a pick.
+//
+// No alerts in the operator feed for any of this. Designed to be invisible
+// outside the simulation map itself.
 
-function checkStuckAgents() {
-  if (!scenarioOn) return;
-  var now = Date.now();
-  agents.forEach(function(a) {
-    if (!a || !a.lat || !a.lon) return;
-    if (a.status === 'captured') return;
-    if (!a._stuckRef) {
-      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
-      return;
-    }
-    var d = haversineM(a.lat, a.lon, a._stuckRef.lat, a._stuckRef.lon);
-    if (d > STUCK_RADIUS_M) {
-      // Moved enough — reset the reference and we're good
-      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
-      return;
-    }
-    // Hasn't moved much. Is there a legit reason? Pursuit hold within 30m of
-    // the suspect counts as "supposed to be still" — reset the reference so we
-    // don't accidentally relocate a unit that's correctly on scene.
-    if (a.status === 'pursuing' && a.taskedTo) {
-      var bg = targetFor(a);
-      if (bg && bg.active && haversineM(a.lat, a.lon, bg.lat, bg.lon) < 30) {
-        a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
-        return;
-      }
-    }
-    // Genuinely stuck — relocate after the timeout
-    if (now - a._stuckRef.since > STUCK_TIMEOUT_MS) {
-      relocateAgent(a);
-      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
-    }
-  });
+var FLIP_THRESHOLD   = 3;        // consecutive 180° flips before intervention
+var FLIP_ANGLE_DEG   = 150;      // bearing change above this counts as a flip
+var COMMIT_MS        = 3000;     // forward-only window after intervention
+var STUCK_RADIUS_M   = 8;        // movement less than this = not moving
+var BRUTE_FORCE_MS   = 10000;    // 10s without movement = brute-force relocate
+
+// Angular difference in degrees, 0..180.
+function angularDiff(a, b) {
+  var d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
 }
 
-function relocateAgent(a) {
-  var wasPursuing = (a.status === 'pursuing' && a.taskedTo);
-  var oldBg      = wasPursuing ? targetFor(a) : null;
-  var oldType    = a.type;
-  var oldBgId    = wasPursuing && oldBg ? oldBg.id : null;
-  // Pick a fresh point in the operational area, snapped to a node the agent
-  // can actually traverse.
+// Find the neighbor of currentNode whose bearing best aligns with the
+// agent's last bearing — i.e., the most "forward" continuation. Used inside
+// the commit window when the picker would force a 180° flip. Returns null
+// if no neighbor is reasonably forward (all options would themselves flip).
+function pickForwardNeighbor(agent) {
+  if (agent._lastBearing == null) return null;
+  var node = roadGraph.nodes[agent.currentNode];
+  if (!node || !node.neighbors || !node.neighbors.length) return null;
+  var bestId = null, bestDiff = Infinity;
+  for (var i = 0; i < node.neighbors.length; i++) {
+    var nbId = node.neighbors[i];
+    var nb = roadGraph.nodes[nbId];
+    if (!nb) continue;
+    var b = bearingDeg(node.lat, node.lon, nb.lat, nb.lon);
+    var diff = angularDiff(b, agent._lastBearing);
+    if (diff < bestDiff) { bestDiff = diff; bestId = nbId; }
+  }
+  return bestDiff <= FLIP_ANGLE_DEG ? bestId : null;
+}
+
+// Wrap any target-pick call with flip detection. Returns the chosen target,
+// possibly substituted with a forward-continuation neighbor during the
+// commit window. Increments _flipCount on each flip; when threshold is hit,
+// calls handleOscillation. Returns null if the handler changed agent state
+// (status/position) so the caller knows to abandon this pick.
+function pickWithFlipGuard(agent, picker) {
+  var prevStatus = agent.status;
+  var prevLat    = agent.lat;
+  var prevTask   = agent.taskedTo;
+  var candidate  = picker();
+  if (!candidate || !roadGraph.nodes[candidate]) return candidate;
+  var c  = roadGraph.nodes[agent.currentNode];
+  var tn = roadGraph.nodes[candidate];
+  if (!c || !tn) return candidate;
+  var newBearing = bearingDeg(c.lat, c.lon, tn.lat, tn.lon);
+  var now = Date.now();
+  if (agent._lastBearing != null) {
+    var isFlip = angularDiff(newBearing, agent._lastBearing) > FLIP_ANGLE_DEG;
+    // Inside commit window: try to substitute a forward neighbor for a flip
+    if (isFlip && now < agent._commitUntil) {
+      var alt = pickForwardNeighbor(agent);
+      if (alt && alt !== candidate) {
+        candidate = alt;
+        var altN = roadGraph.nodes[alt];
+        newBearing = bearingDeg(c.lat, c.lon, altN.lat, altN.lon);
+        isFlip = angularDiff(newBearing, agent._lastBearing) > FLIP_ANGLE_DEG;
+      }
+    }
+    if (isFlip) {
+      agent._flipCount = (agent._flipCount || 0) + 1;
+      if (agent._flipCount >= FLIP_THRESHOLD) {
+        handleOscillation(agent);
+        agent._flipCount = 0;
+        // If the handler relocated/untasked, abandon the candidate
+        if (agent.lat !== prevLat || agent.status !== prevStatus ||
+            agent.taskedTo !== prevTask) {
+          return null;
+        }
+      }
+    } else {
+      agent._flipCount = 0;
+    }
+  }
+  agent._lastBearing = newBearing;
+  return candidate;
+}
+
+// Silent teleport: agent jumps to a fresh road point, all path/pursuit
+// state cleared. No alert. Used by both layers of intervention.
+function relocateAgentSilent(a) {
   var pt = _ic_randomMapPoint();
   if (a.type === 'drone') {
-    // Drones fly freely — just teleport
     a.lat = pt.lat;
     a.lon = pt.lng;
   } else {
-    var snapped = roadNetworkReady ? snapToRoad(pt.lat, pt.lng, a.type)
-                                   : { lat: pt.lat, lon: pt.lng };
-    a.lat         = snapped.lat;
-    a.lon         = snapped.lon;
-    a.currentNode = nearestNode(a.lat, a.lon);
-    a.prevNode    = null;
-    a.targetNode  = null;
-    // Drop cached pursuit state so we don't try to follow a path from the old position
+    a.lat          = pt.lat;
+    a.lon          = pt.lng;
+    a.currentNode  = nearestNode(a.lat, a.lon);
+    a.prevNode     = null;
+    a.targetNode   = null;
     a._pursuitPath = null;
     a._pursuitGoal = null;
     a._pursuitSp   = null;
     a.pauseUntil   = 0;
   }
-  // Untask if we abandoned a pursuit — incident loses this unit-type slot
-  if (wasPursuing) {
-    if (oldBg && oldBg.taskedUnits) {
-      Object.keys(oldBg.taskedUnits).forEach(function(t) {
-        if (oldBg.taskedUnits[t] === a) delete oldBg.taskedUnits[t];
-      });
-    }
-    a.taskedTo = null;
-    a.status   = 'patrol';
-    if (a.marker && a.marker._element) {
-      a.marker._element.classList.remove('agent-tasked-glow');
-    }
-  }
+  a._lastBearing = null;
+  a._flipCount   = 0;
+  a._commitUntil = 0;
+  a._stuckRef    = null;
   if (a.marker) a.marker.setLngLat([a.lon, a.lat]);
   if (a.updateMarker) a.updateMarker();
-  addAlert('warn', '⚡ ' + a.cfg.label + ' ' + a.id + ' was stuck — relocated' +
-    (wasPursuing ? ' (released from Incident #' + oldBgId + ')' : '') + '.');
-  // Backfill: if we abandoned a pursuit, dispatch the closest other available
-  // unit of the same type so the incident doesn't lose its coverage.
-  if (wasPursuing && oldBg && oldBg.active && !oldBg.taskedUnits[oldType]) {
+}
+
+// Untask agent from current pursuit, dispatch the closest other available
+// unit of the same type to backfill the slot, then silently relocate the
+// original. All silent — no alerts.
+function untaskBackfillRelocate(agent) {
+  var oldBg   = targetFor(agent);
+  var oldBgId = agent.taskedTo;
+  var oldType = agent.type;
+  if (oldBg && oldBg.taskedUnits) {
+    Object.keys(oldBg.taskedUnits).forEach(function(t) {
+      if (oldBg.taskedUnits[t] === agent) delete oldBg.taskedUnits[t];
+    });
+  }
+  agent.taskedTo = null;
+  agent.status   = 'patrol';
+  if (agent.marker && agent.marker._element) {
+    agent.marker._element.classList.remove('agent-tasked-glow');
+  }
+  // Backfill another unit of the same type if available
+  if (oldBg && oldBg.active && !oldBg.taskedUnits[oldType]) {
     var pool = agents.filter(function(x) {
-      return x.type === oldType && x.status !== 'captured' && !x.taskedTo && x !== a;
+      return x.type === oldType && x.status !== 'captured' && !x.taskedTo && x !== agent;
     });
     if (pool.length) {
       var best = pool[0], bestD = Infinity;
@@ -2133,19 +2209,82 @@ function relocateAgent(a) {
         var dx = haversineM(x.lat, x.lon, oldBg.lat, oldBg.lon);
         if (dx < bestD) { bestD = dx; best = x; }
       });
-      best.taskedTo  = oldBg.id;
-      best.status    = 'pursuing';
-      best.pauseUntil = 0;
+      best.taskedTo     = oldBgId;
+      best.status       = 'pursuing';
+      best.pauseUntil   = 0;
+      best._lastBearing = null;
+      best._flipCount   = 0;
+      best._commitUntil = 0;
       if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
       if (best.marker && best.marker._element) {
         best.marker._element.classList.add('agent-tasked-glow');
       }
       oldBg.taskedUnits[oldType] = best;
-      addAlert('warn', best.cfg.label + ' ' + best.id +
-        ' reassigned to Incident #' + oldBgId + ' (backfill).');
     }
   }
-  renderTaskings();
+  relocateAgentSilent(agent);
+  if (typeof renderTaskings === 'function') renderTaskings();
+}
+
+// Triggered when the bearing-flip detector hits FLIP_THRESHOLD. Stops the
+// agent first, then branches: if currently in FOV of its tasked suspect,
+// becomes a stationary 'observing' unit (still produces CV detections);
+// otherwise gets untasked, backfilled, and silently relocated.
+function handleOscillation(agent) {
+  agent._commitUntil = Date.now() + COMMIT_MS;
+  var wasPursuing = (agent.status === 'pursuing' && agent.taskedTo);
+  var hasFov      = wasPursuing && agent._inFovOf && agent._inFovOf[agent.taskedTo];
+  if (wasPursuing && hasFov) {
+    // Stationary observer — keep tasked, keep producing detections, stop moving
+    agent.status     = 'observing';
+    agent.speed      = 0;
+    agent.targetNode = null;
+  } else if (wasPursuing) {
+    untaskBackfillRelocate(agent);
+  } else {
+    relocateAgentSilent(agent);
+  }
+}
+
+// Per-tick brute-force backstop + observer-recovery. Runs every 4 ticks (2s).
+function checkStuckAgents() {
+  if (!scenarioOn) return;
+  var now = Date.now();
+  agents.forEach(function(a) {
+    if (!a || !a.lat || !a.lon) return;
+    if (a.status === 'captured') return;
+    // Observer recovery: if we lost FOV on the tasked suspect, the unit is
+    // no longer contributing — untask, backfill, relocate.
+    if (a.status === 'observing') {
+      var hasFov = a._inFovOf && a._inFovOf[a.taskedTo];
+      if (!hasFov) untaskBackfillRelocate(a);
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    if (!a._stuckRef) {
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    var d = haversineM(a.lat, a.lon, a._stuckRef.lat, a._stuckRef.lon);
+    if (d > STUCK_RADIUS_M) {
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    // Pursuit hold (within 30m of suspect) is a legitimate stop
+    if (a.status === 'pursuing' && a.taskedTo) {
+      var bg = targetFor(a);
+      if (bg && bg.active && haversineM(a.lat, a.lon, bg.lat, bg.lon) < 30) {
+        a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+        return;
+      }
+    }
+    // Truly stuck — silent intervention
+    if (now - a._stuckRef.since > BRUTE_FORCE_MS) {
+      if (a.status === 'pursuing' && a.taskedTo) untaskBackfillRelocate(a);
+      else                                       relocateAgentSilent(a);
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+    }
+  });
 }
 
 // ── AUTO-START ────────────────────────────────────────────────────────────────
@@ -2999,10 +3138,15 @@ function checkDetection() {
     if (a.status === 'captured') return;
     // Track visual state per (agent, bg) for HUD coloring on the FOV polygon
     a._hasVisual = false;
+    // Per-tick rebuild of "this agent has bg X in FOV" map; consumed by
+    // handleOscillation to decide observe-vs-relocate, and by checkStuckAgents
+    // for observer recovery when FOV is lost.
+    a._inFovOf = {};
     badGuys.forEach(function(bg) {
       if (!bg.active) return;
       if (inFOV(a, bg)) {
         a._hasVisual = true;
+        a._inFovOf[bg.id] = true;
         recordDetection(bg, 'agent-' + a.type + '-' + a.id,
           a.cfg.label + ' ' + a.id + ' ' + (a.type === 'drone' ? 'overhead camera' : 'dash/body cam'),
           'match: ' + _detMatch(bg));
@@ -3500,11 +3644,31 @@ function _ic_colorFor(objType) {
 }
 
 function _ic_randomMapPoint() {
-  // Interior of operational area (BBOX 42.338,-71.090,42.373,-71.042)
-  var latMin = 42.345, latMax = 42.365;
-  var lngMin = -71.082, lngMax = -71.050;
-  return { lat: latMin + Math.random()*(latMax-latMin),
-           lng: lngMin + Math.random()*(lngMax-lngMin) };
+  // Pick a random road-graph node a car can traverse. Cars have the most
+  // restrictive ALLOWED_HIGHWAYS filter, so any car-accessible node is also
+  // reachable by bikes and officers — every spawn is guaranteed reachable by
+  // every unit type. Eliminates suspect spawns inside buildings or on
+  // pedestrian-only paths that some unit types can't get to. Falls back to a
+  // bbox-uniform random pick if the road network hasn't loaded yet.
+  if (!roadGraph || !roadGraph.nodesByType || !roadGraph.nodesByType.car) {
+    return {
+      lat: 42.345 + Math.random() * (42.365 - 42.345),
+      lng: -71.082 + Math.random() * ((-71.050) - (-71.082))
+    };
+  }
+  var pool = roadGraph.nodesByType.car;
+  var inBounds = [];
+  for (var i = 0; i < pool.length; i++) {
+    var n = roadGraph.nodes[pool[i]];
+    if (n && n.lat >= 42.345 && n.lat <= 42.365 &&
+        n.lon >= -71.082 && n.lon <= -71.050) {
+      inBounds.push(pool[i]);
+    }
+  }
+  var ids = inBounds.length ? inBounds : pool;
+  var pick = ids[Math.floor(Math.random() * ids.length)];
+  var node = roadGraph.nodes[pick];
+  return { lat: node.lat, lng: node.lon };
 }
 
 // Resolve any lat/lon to a real street address ("[house#] [street]"). Used
