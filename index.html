@@ -1385,9 +1385,9 @@ async function _tryLocalStatic(filename) {
 }
 
 async function fetchOverpass(mirrorIdx) {
-  // First call only: try the static local cache. Recursive mirror calls skip
-  // this since they're already deeper in the chain.
-  if (mirrorIdx === undefined) {
+  // First call only (mirrorIdx 0 or undefined): try the static local cache.
+  // Recursive mirror calls pass 1, 2, 3 and skip this.
+  if (!mirrorIdx) {
     var local = await _tryLocalStatic('roads.json');
     if (local) {
       console.info('Roads loaded from static cache (./cache/roads.json)');
@@ -1425,7 +1425,7 @@ async function fetchOverpass(mirrorIdx) {
 
 // Fetch real traffic-signal intersections from OSM (one node per signalised intersection)
 async function fetchTrafficSignals(mirrorIdx) {
-  if (mirrorIdx === undefined) {
+  if (!mirrorIdx) {
     var local = await _tryLocalStatic('signals.json');
     if (local) {
       console.info('Signals loaded from static cache (./cache/signals.json)');
@@ -1462,7 +1462,7 @@ async function fetchTrafficSignals(mirrorIdx) {
 
 // Fetch OSM-mapped public surveillance cameras (community-tagged CCTV in public zones)
 async function fetchSurveillanceCameras(mirrorIdx) {
-  if (mirrorIdx === undefined) {
+  if (!mirrorIdx) {
     var local = await _tryLocalStatic('surveillance.json');
     if (local) {
       console.info('Surveillance loaded from static cache (./cache/surveillance.json)');
