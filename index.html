@@ -122,6 +122,8 @@ body{display:flex;flex-direction:column;}
 .abadge.off{opacity:.6;}
 .abadge.off::after{background:var(--mut);box-shadow:none;}
 .abadge.off .abn{text-decoration:line-through;}
+.abadge.silent{opacity:.85;border-style:dashed;}
+.abadge.silent::after{background:#f59e0b;box-shadow:0 0 4px #f59e0b;}
 .abn{font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.05em;font-weight:600;}
 .abc{font-size:15px;font-weight:700;}
 .agrid-hint{font-size:9px;color:#bae6fd;text-transform:uppercase;letter-spacing:.06em;
@@ -869,15 +871,16 @@ function updateAssetCounts() {
   setPoliceBadge('c-ca','car');
   setPoliceBadge('c-bi','bike');
   setPoliceBadge('c-of','officer');
-  // Sensors: show 0/0 when toggled off so the badge reflects "nothing deployed"
+  // Sensors: show "active/visible" so 3-state is legible at a glance.
+  //   27/27 = full   (active + overlay shown)
+  //   27/0  = silent (active + overlay hidden)
+  //   0/0   = off    (inactive)
   function setSensorBadge(id, inventory, visKey) {
     var el = document.getElementById(id);
     if (!el) return;
-    if (assetVisibility[visKey]) {
-      el.textContent = inventory + '/' + inventory;
-    } else {
-      el.textContent = '0/0';
-    }
+    var active  = assetVisibility[visKey] ? inventory : 0;
+    var visible = assetGraphics[visKey]   ? inventory : 0;
+    el.textContent = active + '/' + visible;
   }
   // All cameras (traffic + surveillance) share one toggle now; show combined total
   setSensorBadge('c-cam-traf', cameras.length, 'traffic-cams');
@@ -1139,9 +1142,30 @@ var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
   'traffic-cams': false, mics: false
 };
+// Sensors (mics + traffic-cams) have a 3-state toggle: off → full → silent → off.
+//   full   — assetVisibility=true,  assetGraphics=true   (active + overlay shown)
+//   silent — assetVisibility=true,  assetGraphics=false  (active + overlay hidden)
+//   off    — assetVisibility=false, assetGraphics=false  (inactive)
+// Agent toggles (drones/vehicles/bikes/officers) remain binary; they don't
+// have an entry in assetGraphics and their rendering follows assetVisibility.
+var DEFAULT_GRAPHICS = { 'traffic-cams': false, mics: false };
 var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
+var assetGraphics   = Object.assign({}, DEFAULT_GRAPHICS);
+
+function getSensorState(type) {
+  if (!(type in assetGraphics)) return null;
+  if (!assetVisibility[type]) return 'off';
+  if (!assetGraphics[type])   return 'silent';
+  return 'full';
+}
+function setSensorState(type, state) {
+  if (state === 'full')   { assetVisibility[type] = true;  assetGraphics[type] = true;  }
+  if (state === 'silent') { assetVisibility[type] = true;  assetGraphics[type] = false; }
+  if (state === 'off')    { assetVisibility[type] = false; assetGraphics[type] = false; }
+}
 function resetAssetVisibility() {
   Object.assign(assetVisibility, DEFAULT_VISIBILITY);
+  Object.assign(assetGraphics,   DEFAULT_GRAPHICS);
   applyAssetVisibility();
 }
 
@@ -2957,7 +2981,7 @@ function cameraFOVFeatures() {
   var feats = [];
   cameras.forEach(function(cam) {
     var isSurv = cam.subtype === 'surveillance';
-    var visible = assetVisibility['traffic-cams'];
+    var visible = assetGraphics['traffic-cams'];
     if (!visible) return;
     var cfg = isSurv ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     var hot     = cam._hasVisual;
@@ -3060,7 +3084,7 @@ function placeCameras(nodes, subtype) {
     el.title = label + ' #' + n.id;
     var marker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([n.lon, n.lat]).addTo(map);
-    if (!assetVisibility[visKey]) el.style.display = 'none';
+    if (!assetGraphics[visKey]) el.style.display = 'none';
     var camObj = { id: n.id, lat: n.lat, lon: n.lon, marker: marker, el: el, subtype: subtype };
     attachSensorPopup(el, function() {
       return { lat: camObj.lat, lon: camObj.lon, label: label,
@@ -3113,7 +3137,7 @@ function micMeshFeatures() {
 function updateMicMesh() {
   var src = map.getSource('mic-mesh');
   if (!src) return;
-  src.setData({ type:'FeatureCollection', features: assetVisibility.mics ? micMeshFeatures() : [] });
+  src.setData({ type:'FeatureCollection', features: assetGraphics.mics ? micMeshFeatures() : [] });
 }
 
 // Find nearest existing icon (camera or agent) and its distance, in meters
@@ -3162,7 +3186,7 @@ function placeMics() {
       el.title = 'Mic #' + (mics.length + 1);
       var marker = new maplibregl.Marker({ element: el, anchor:'center' })
         .setLngLat([lon, lat]).addTo(map);
-      if (!assetVisibility.mics) el.style.display = 'none';
+      if (!assetGraphics.mics) el.style.display = 'none';
       mics.push({ id: mics.length + 1, lat: lat, lon: lon, marker: marker, el: el });
     }
   }
@@ -3188,7 +3212,7 @@ function placeMics() {
     el.title = 'Mic #' + idx + ' — ' + poi.name;
     var marker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([lon, lat]).addTo(map);
-    if (!assetVisibility.mics) el.style.display = 'none';
+    if (!assetGraphics.mics) el.style.display = 'none';
     mics.push({ id: idx, lat: lat, lon: lon, marker: marker, el: el, poi: poi.name });
   });
   updateMicMesh();
@@ -3201,34 +3225,32 @@ function placeMics() {
 // assetVisibility. Click → toggleAssetType → applyAssetVisibility re-syncs icons,
 // FOV layers, and badge visual state in one place.
 function toggleAssetType(type) {
-  var wasOn = !!assetVisibility[type];
-  assetVisibility[type] = !wasOn;
-  applyAssetVisibility();
-  // Sensor toggle messages — only for sensor types, not police layer toggles.
-  var sensorLabels = {
-    'traffic-cams':       'Cameras',
-    'mics':               'Acoustic mesh'
-  };
-  if (sensorLabels[type]) {
-    var count;
-    if (type === 'mics') count = mics.length;
-    else count = cameras.length;   // all cameras under one toggle now
-    if (!wasOn) {
-      // Just turned ON
-      if (count > 0) {
-        addAlert('info', sensorLabels[type] + ' online — ' + count + ' deployed.');
-      } else {
-        addAlert('warn', sensorLabels[type] + ' enabled — no data loaded yet.');
-      }
-    } else {
-      // Just turned OFF
-      if (count > 0) addAlert('info', sensorLabels[type] + ' offline.');
+  var sensorState = getSensorState(type);
+  if (sensorState !== null) {
+    // 3-state cycle for sensors: off → full → silent → off
+    var next = sensorState === 'off'    ? 'full'
+             : sensorState === 'full'   ? 'silent'
+             : 'off';
+    setSensorState(type, next);
+    applyAssetVisibility();
+    var sensorLabels = { 'traffic-cams': 'Cameras', 'mics': 'Acoustic mesh' };
+    var count = (type === 'mics') ? mics.length : cameras.length;
+    if (count === 0 && next !== 'off') {
+      addAlert('warn', sensorLabels[type] + ' enabled — no data loaded yet.');
+    } else if (count > 0) {
+      if (next === 'full')        addAlert('info', sensorLabels[type] + ' online — ' + count + ' active, overlay visible.');
+      else if (next === 'silent') addAlert('info', sensorLabels[type] + ' silent ops — ' + count + ' active, overlay hidden.');
+      else                        addAlert('info', sensorLabels[type] + ' offline.');
     }
+    return;
   }
+  // Binary toggle for agent types (drones / vehicles / bikes / officers)
+  assetVisibility[type] = !assetVisibility[type];
+  applyAssetVisibility();
 }
 
 function applyAssetVisibility() {
-  // Agent markers
+  // Agent markers (binary, follow assetVisibility)
   var agentMap = { drone:'drones', car:'vehicles', bike:'bikes', officer:'officers' };
   agents.forEach(function(a) {
     var visible = assetVisibility[agentMap[a.type]] !== false;
@@ -3236,23 +3258,24 @@ function applyAssetVisibility() {
       a.marker._element.style.display = visible ? '' : 'none';
     }
   });
-  // Camera markers — all share one visibility toggle (traffic-cams) now,
-  // regardless of subtype. Underlying data still distinguishes them for
-  // popup labels and FOV ranges.
+  // Camera markers — show only when graphics are on (silent state hides icons)
   cameras.forEach(function(c) {
-    c.el.style.display = assetVisibility['traffic-cams'] ? '' : 'none';
+    c.el.style.display = assetGraphics['traffic-cams'] ? '' : 'none';
   });
-  // Mic markers
+  // Mic markers — same rule
   mics.forEach(function(m) {
-    m.el.style.display = assetVisibility.mics ? '' : 'none';
+    m.el.style.display = assetGraphics.mics ? '' : 'none';
   });
-  // FOV / mesh layers re-render
+  // FOV / mesh layers re-render (they read assetGraphics internally)
   updateFOV();
   updateCameraFOV();
   updateMicMesh();
-  // Badge UI state + count refresh (sensor badges flip to/from 0/0)
+  // Badge UI: off (strikethrough+grey), silent (dashed+amber), full (default+green)
   document.querySelectorAll('.abadge[data-toggle]').forEach(function(b) {
-    b.classList.toggle('off', !assetVisibility[b.dataset.toggle]);
+    var t  = b.dataset.toggle;
+    var st = getSensorState(t);
+    b.classList.toggle('off',    st !== null ? st === 'off'    : !assetVisibility[t]);
+    b.classList.toggle('silent', st === 'silent');
   });
   updateAssetCounts();
 }
