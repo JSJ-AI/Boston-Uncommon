@@ -220,7 +220,6 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'Inter',sans-serif;
   overflow:hidden;color:#fff;}
 .spop.cam-traf{border-color:#eab308;}
-.spop.cam-surv{border-color:#93c5fd;}
 .spop.ag-drone{border-color:#0284c7;}
 .spop.ag-car{border-color:#16a34a;}
 .spop.ag-bike{border-color:#ea580c;}
@@ -262,7 +261,6 @@ body{display:flex;flex-direction:column;}
   color:#fff;padding:3px 8px;border-radius:3px;font-size:10px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase;border-left:3px solid var(--acc);}
 #sensor-feed .sf-tag.cam-traf{border-left-color:#eab308;}
-#sensor-feed .sf-tag.cam-surv{border-left-color:#2563eb;}
 #sensor-feed .sf-tag.ag-drone{border-left-color:#0284c7;}
 #sensor-feed .sf-tag.ag-car{border-left-color:#16a34a;}
 #sensor-feed .sf-tag.ag-bike{border-left-color:#ea580c;}
@@ -363,7 +361,7 @@ body{display:flex;flex-direction:column;}
     <h2>Welcome to Boston UnCommon</h2>
     <div class="wm-sub">Agentic AI &middot; Computer Vision &middot; 911 Deployment Simulation</div>
     <p>An <strong>agentic AI computer vision actionable intelligence model</strong> that uses computer vision and object detection from 911-call audio attributes &mdash; speech-to-text that spawns object search or pursuit.</p>
-    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, surveillance cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
+    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
     <p class="welcome-emphasis">Press &ldquo;Answer 911 Call&rdquo; to put the Security Operations Center into action.</p>
     <p>An event object or person will be placed on the map based on call information, and then all the cameras&rsquo; fields of view can be used to locate and vector resources to resolve the 911 call tasking.</p>
     <p>This is a thought-stimulation exercise to imagine what is possible when computer vision telemetry data can be coordinated and tasking to law enforcement help is automatically deployed.</p>
@@ -413,7 +411,6 @@ body{display:flex;flex-direction:column;}
         <div class="abadge" data-toggle="bikes" onclick="toggleAssetType('bikes')"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge" data-toggle="officers" onclick="toggleAssetType('officers')"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge" data-toggle="traffic-cams" onclick="toggleAssetType('traffic-cams')"><span style="font-size:16px;color:#eab308;">&#128678;</span><div><div class="abn">Traffic Cams</div><div class="abc" id="c-cam-traf">0/0</div></div></div>
-        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#93c5fd;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
         <div class="abadge" data-toggle="mics" onclick="toggleAssetType('mics')"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
     </div>
@@ -573,8 +570,8 @@ function allSensors() {
   // Combined list of every camera-bearing object on the map
   var out = [];
   cameras.forEach(function(c) {
-    var label = c.subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
-    var kind  = c.subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
+    var label = 'TRAFFIC CAM';
+    var kind  = 'cam-traf';
     out.push({ lat:c.lat, lon:c.lon, label:label, sourceId:'#'+c.id, kindClass:kind });
   });
   var kindMap  = { drone:'ag-drone', car:'ag-car', bike:'ag-bike', officer:'ag-officer' };
@@ -851,12 +848,9 @@ function updateAssetCounts() {
       el.textContent = '0/0';
     }
   }
-  var trafCount = 0, survCount = 0;
-  cameras.forEach(function(c) {
-    if (c.subtype === 'surveillance') survCount++; else trafCount++;
-  });
-  setSensorBadge('c-cam-traf', trafCount, 'traffic-cams');
-  setSensorBadge('c-cam-surv', survCount, 'surveillance-cams');
+  // All cameras count under the single Traffic Cams badge — the OSM-tagged
+  // surveillance positions are unified into the same category visually.
+  setSensorBadge('c-cam-traf', cameras.length, 'traffic-cams');
   setSensorBadge('c-mic', mics.length, 'mics');
 }
 
@@ -1083,18 +1077,17 @@ var AGENT_CONFIG = {
 
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
-// Public surveillance cameras (OSM man_made=surveillance, public-zone only)
-// Color is blue (distinct from drone sky-blue) so they read as a separate sensor class
-var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#93c5fd' };
+// OSM-tagged public CCTV positions — shorter range (50m) reflects the
+// real-world fixed-camera coverage but visually unified with traffic cams.
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#eab308' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 // Unified visibility map — each badge in the asset grid toggles one of these.
 // Single source of truth for all on/off layer controls.
-// Defaults: traffic cams and mics start OFF for a less-cluttered initial view;
-// surveillance cams stay on (sparser, more interesting). Same defaults restored
-// on Reset for a consistent clean start.
+// Defaults: cameras and mics start OFF for a less-cluttered initial view.
+// Same defaults restored on Reset for a consistent clean start.
 var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
-  'traffic-cams': false, 'surveillance-cams': false, mics: false
+  'traffic-cams': false, mics: false
 };
 var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
 function resetAssetVisibility() {
@@ -1403,7 +1396,7 @@ function fetchMapillarySnapshot(lat, lon) {
 }
 
 // Pick the right imagery source for a sensor type
-// kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf' | 'cam-surv'
+// kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf'
 function getSensorImage(lat, lon, kindClass) {
   // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees
   if (kindClass === 'ag-drone') {
@@ -2322,9 +2315,8 @@ function cameraFOVFeatures() {
   // Wedges filtered out for camera types whose layer toggle is off.
   var feats = [];
   cameras.forEach(function(cam) {
+    if (!assetVisibility['traffic-cams']) return;
     var isSurv = cam.subtype === 'surveillance';
-    var visible = isSurv ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
-    if (!visible) return;
     var cfg = isSurv ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     var hot     = cam._hasVisual;
     var color   = hot ? '#ef4444' : cfg.color;
@@ -2414,9 +2406,9 @@ function placeCameras(nodes, subtype) {
   // subtype: 'traffic' (default) or 'surveillance'
   subtype = subtype || 'traffic';
   var cfg       = subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-  var label     = subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
-  var kindClass = subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
-  var visKey    = subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
+  var label     = 'TRAFFIC CAM';
+  var kindClass = 'cam-traf';
+  var visKey    = 'traffic-cams';
   nodes.forEach(function(n) {
     var el = document.createElement('div');
     el.className = 'cam-marker';
@@ -2538,14 +2530,12 @@ function toggleAssetType(type) {
   // Sensor toggle messages — only for sensor types, not police layer toggles.
   var sensorLabels = {
     'traffic-cams':       'Traffic cameras',
-    'surveillance-cams':  'Surveillance cameras',
     'mics':               'Acoustic mesh'
   };
   if (sensorLabels[type]) {
     var count;
     if (type === 'mics') count = mics.length;
-    else if (type === 'surveillance-cams') count = cameras.filter(function(c){return c.subtype==='surveillance';}).length;
-    else count = cameras.filter(function(c){return c.subtype!=='surveillance';}).length;
+    else if (type === 'traffic-cams') count = cameras.length;
     if (!wasOn) {
       // Just turned ON
       if (count > 0) {
@@ -2569,9 +2559,9 @@ function applyAssetVisibility() {
       a.marker._element.style.display = visible ? '' : 'none';
     }
   });
-  // Camera markers (split by subtype)
+  // Camera markers — all under the unified traffic-cams toggle
   cameras.forEach(function(c) {
-    var visible = c.subtype === 'surveillance' ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
+    var visible = assetVisibility['traffic-cams'];
     c.el.style.display = visible ? '' : 'none';
   });
   // Mic markers
@@ -2753,16 +2743,14 @@ function inCameraFOV(cam, target) {
 function checkCameraDetection() {
   if (!badGuys.length) return;
   cameras.forEach(function(cam) {
-    var visKey = cam.subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
-    if (!assetVisibility[visKey]) { cam._hasVisual = false; return; }
+    if (!assetVisibility['traffic-cams']) { cam._hasVisual = false; return; }
     cam._hasVisual = false;
     badGuys.forEach(function(bg) {
       if (!bg.active) return;
       if (inCameraFOV(cam, bg)) {
         cam._hasVisual = true;
-        var label = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
         recordDetection(bg, 'cam-' + cam.subtype + '-' + cam.id,
-          label + ' #' + cam.id,
+          'Traffic Cam #' + cam.id,
           'match: ' + _detMatch(bg));
       }
     });
