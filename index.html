@@ -1441,18 +1441,19 @@ function satelliteTileURL(lat, lon, zoom) {
   return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+zoom+'/'+y+'/'+x;
 }
 
-// Mapillary: query nearest image to a coord, return thumbnail URL or null
-// Cache key rounds lat/lon to ~10m so we don't re-fetch identical queries
-var mapillaryCache = {};   // key -> { url: string|null, ts: ms }
+// Mapillary: query nearest image to a coord, return thumbnail URL or null.
+// Cache is keyed on (rounded coords, radius) so different-radius queries
+// for the same point cache separately — important for the camera widen-retry
+// pattern: a first-pass miss at small radius shouldn't poison a wider second pass.
+var mapillaryCache = {};
 var MAPILLARY_CACHE_TTL = 30 * 60 * 1000;  // 30 min
-function fetchMapillarySnapshot(lat, lon) {
-  var key = lat.toFixed(4) + '|' + lon.toFixed(4);
+function fetchMapillarySnapshot(lat, lon, d) {
+  if (typeof d !== 'number') d = 0.0005;     // default ~55m square
+  var key = lat.toFixed(4) + '|' + lon.toFixed(4) + '|' + d.toFixed(4);
   var hit = mapillaryCache[key];
   if (hit && (Date.now() - hit.ts) < MAPILLARY_CACHE_TTL) {
     return Promise.resolve(hit.url);
   }
-  // bbox ~110m square (well under Mapillary's 0.01° limit)
-  var d = 0.0005;
   var bbox = (lon - d) + ',' + (lat - d) + ',' + (lon + d) + ',' + (lat + d);
   var url = 'https://graph.mapillary.com/images?fields=id,thumb_1024_url&bbox=' + bbox +
     '&limit=1&access_token=' + MAPILLARY_TOKEN;
@@ -1473,7 +1474,8 @@ function fetchMapillarySnapshot(lat, lon) {
 // Pick the right imagery source for a sensor type
 // kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf' | 'cam-surv'
 function getSensorImage(lat, lon, kindClass) {
-  // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees
+  // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees.
+  // Satellite imagery is the correct image for an overhead camera.
   if (kindClass === 'ag-drone') {
     return Promise.resolve({
       url: satelliteTileURL(lat, lon, 18),
@@ -1481,11 +1483,38 @@ function getSensorImage(lat, lon, kindClass) {
       attribution: 'Aerial \u00A9 Esri'
     });
   }
-  // Ground-level sensors: try Mapillary first, fall back to aerial honestly labelled
-  return fetchMapillarySnapshot(lat, lon).then(function(thumb) {
-    if (thumb) return { url: thumb, sourceLabel: 'STREET VIEW', attribution: 'Photo \u00A9 Mapillary' };
+  // Cameras stand in for a fixed-mount JPEG feed. Boston doesn't expose a
+  // public CORS-friendly endpoint per OSM-tagged camera, so we proxy with
+  // Mapillary's crowd-sourced street-level photography — visually equivalent
+  // to "what a camera at this corner sees." Try a generous radius first
+  // (~165m) since cameras at intersections often have their nearest
+  // Mapillary photo down a road approach; if that misses, retry at ~330m;
+  // only then fall back to aerial.
+  var isCam   = (kindClass === 'cam-traf' || kindClass === 'cam-surv');
+  var camLbl  = (kindClass === 'cam-surv') ? 'SURVEILLANCE FEED' : 'TRAFFIC CAM FEED';
+  var radius1 = isCam ? 0.0015 : 0.0005;
+  return fetchMapillarySnapshot(lat, lon, radius1).then(function(thumb) {
+    if (thumb) {
+      return { url: thumb,
+        sourceLabel: isCam ? camLbl : 'STREET VIEW',
+        attribution: 'Photo \u00A9 Mapillary' };
+    }
+    if (isCam) {
+      // Second pass at ~330m before giving up on Mapillary
+      return fetchMapillarySnapshot(lat, lon, 0.003).then(function(thumb2) {
+        if (thumb2) {
+          return { url: thumb2,
+            sourceLabel: camLbl,
+            attribution: 'Photo \u00A9 Mapillary' };
+        }
+        return { url: satelliteTileURL(lat, lon, 18),
+          sourceLabel: 'AERIAL (camera feed unavailable)',
+          attribution: 'Aerial \u00A9 Esri' };
+      });
+    }
     return { url: satelliteTileURL(lat, lon, 18),
-      sourceLabel: 'AERIAL (no street coverage)', attribution: 'Aerial \u00A9 Esri' };
+      sourceLabel: 'AERIAL (no street coverage)',
+      attribution: 'Aerial \u00A9 Esri' };
   });
 }
 
