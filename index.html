@@ -861,39 +861,45 @@ function updateAssetCounts() {
 }
 
 // ── ARRIVAL / CATCH ──────────────────────────────────────────────────────────
-// One rule: when any tasked road unit is within its catch radius of the bad
-// guy's *actual* position, OR is parked at its A* goal because the road graph
-// can't get it any closer, the suspect is contained.
-//
-// Catch radii are deliberately generous — this is a sensor-coverage demo, not
-// a tactical-realism sim. A police car visible on screen "next to" the suspect
-// reads as a catch.
-//   car:     80m
-//   bike:    60m
-//   officer: 30m
+// A unit "catches" the suspect when:
+//   1. bg is in the unit's FOV (the unit literally has eyes on the suspect)
+//   2. bg is within 20m of the unit (right next to, even if facing away)
+//   3. unit is stranded at its A* goal AND bg is within 150m (closest reachable
+//      road, suspect visible across a plaza or river bank)
+//   4. unit has been stranded at its A* goal for 15+ seconds (demo timeout —
+//      so a truly unreachable bg doesn't lock the demo forever)
 //
 // When a catcher is identified:
-//   • bg.maxSpeed = bg.speed = 0          (suspect stops physically moving)
-//   • bg.caught = true                    (one boolean — no incidentStatus dance)
-//   • bg.arrivedAt + bg.clearAt set       (30s clearing countdown)
-//   • all road units tasked to this bg → status='on-scene' (they stop moving;
+//   • bg.maxSpeed = bg.speed = 0    (suspect stops moving)
+//   • bg.caught = true              (one boolean — no incidentStatus dance)
+//   • bg.arrivedAt + bg.clearAt set (30s clearing countdown)
+//   • all road units tasked to this bg → status='on-scene' (they freeze;
 //     moveAgent skips on-scene units. No per-tick distance checks needed.)
 //   • response timer freezes, alert fires
-var CATCH_RADIUS = { car: 80, bike: 60, officer: 30 };
 function checkIncidentArrival(bg) {
   if (!bg || !bg.active || bg.caught) return;
-  var catcher = null;
+  var catcher = null, catchReason = '';
   ['car','bike','officer'].forEach(function(type) {
     if (catcher) return;
     var a = bg.taskedUnits[type];
     if (!a) return;
-    if (haversineM(a.lat, a.lon, bg.lat, bg.lon) < CATCH_RADIUS[type]) {
-      catcher = a; return;
+    // (1) FOV — visual contact
+    if (typeof inFOV === 'function' && inFOV(a, bg)) {
+      catcher = a; catchReason = 'visual'; return;
     }
-    // Stranded at A* goal — physically can't get any closer on this unit's
-    // road graph (bridge over river, suspect in park footway interior, etc.)
+    var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
+    // (2) Right next to, regardless of facing
+    if (d < 20) { catcher = a; catchReason = 'proximity'; return; }
+    // (3) Stranded at A* goal but reasonably close
     if (a._pursuitGoal && a.currentNode === a._pursuitGoal) {
-      catcher = a;
+      if (d < 150) { catcher = a; catchReason = 'stranded-close'; return; }
+      // (4) Long-stranded timeout
+      a._strandedSince = a._strandedSince || Date.now();
+      if (Date.now() - a._strandedSince > 15000) {
+        catcher = a; catchReason = 'stranded-timeout'; return;
+      }
+    } else {
+      a._strandedSince = 0;
     }
   });
   if (!catcher) return;
@@ -905,7 +911,6 @@ function checkIncidentArrival(bg) {
   bg.incidentStatus = 'clearing';
   bg.arrivedAt = Date.now();
   bg.clearAt = bg.arrivedAt + 30000;
-  // Freeze all road units tasked to this incident
   Object.keys(bg.taskedUnits).forEach(function(t) {
     if (t === 'drone') return;
     var a = bg.taskedUnits[t];
@@ -994,6 +999,7 @@ function renderTaskings() {
     } else {
       var typeWord = (bg.type === 'car') ? 'vehicle' : (bg.type === 'bike' ? 'bike' : bg.type);
       desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
+      if (meta.plate) desc += ' &middot; plate ' + meta.plate;
     }
     // Timer: live if !timerEnd, frozen at response time if set
     var elapsedMs = (bg.timerEnd || now) - bg.timerStart;
@@ -2084,6 +2090,9 @@ function badGuyPopupHTML(bg) {
     var typeWord = (bg.type === 'car') ? 'Vehicle' : (bg.type === 'bike' ? 'Bike' : bg.type);
     desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
   }
+  var plateLine = meta.plate
+    ? '<div style="font:600 11px \'JetBrains Mono\',monospace;color:#fbbf24;letter-spacing:.12em;margin-bottom:6px;border:1px solid rgba(251,191,36,.55);border-radius:4px;padding:2px 6px;display:inline-block;">PLATE ' + meta.plate + '</div>'
+    : '';
   var taskedList = [];
   ['car','bike','officer','drone'].forEach(function(t){
     var a = bg.taskedUnits && bg.taskedUnits[t];
@@ -2092,6 +2101,7 @@ function badGuyPopupHTML(bg) {
   return '<div style="font:600 10px sans-serif;letter-spacing:.6px;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Incident #' + (bg.id||'?') + '</div>' +
     '<div style="font:600 12px sans-serif;color:#ffffff;margin-bottom:3px;">' + (meta.label || 'Suspect') + '</div>' +
     '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + desc + '</div>' +
+    plateLine +
     '<div style="font:10px sans-serif;color:#7dd3fc;margin-bottom:3px;">' + statusText + '</div>' +
     '<div style="font:10px \'JetBrains Mono\',monospace;color:#f59e0b;margin-bottom:3px;">Response time: ' + timer + '</div>' +
     (taskedList.length ? '<div style="font:10px sans-serif;color:#94a3b8;">Tasked: ' + taskedList.join(', ') + '</div>' : '');
@@ -2838,7 +2848,9 @@ function _detMatch(bg) {
   if (bg.type === 'person') {
     return (color ? color + ' ' : '') + (m.apparel || 'suspect');
   }
-  return (color ? color : '') + ' ' + (bg.type === 'car' ? 'vehicle' : 'bike');
+  var s = (color ? color + ' ' : '') + (bg.type === 'car' ? 'vehicle' : 'bike');
+  if (m.plate) s += ' (plate ' + m.plate + ')';
+  return s;
 }
 
 // ── A* SHORTEST PATH ON ROAD GRAPH ────────────────────────────────────────────
@@ -2976,14 +2988,6 @@ Agent.prototype._pickPursuitTarget = function() {
     return this.currentNode;     // at goal node — stay (arrival logic takes over)
   }
   var nextNode = this._pursuitPath[idx + 1];
-  // Anti-oscillation: if A* wants to send us back through a node we just left,
-  // the path is bouncing (typically because the goal recomputed and the new
-  // shortest path routes through a recently-visited node). Treat as stuck.
-  this._recentNodes = this._recentNodes || [];
-  if (this._recentNodes.indexOf(nextNode) >= 0) {
-    this._pursuitGoal = this.currentNode;
-    return this.currentNode;
-  }
   // U-turn cooldown: a >120° direction change within 2 seconds of the last
   // turn is blocked. Forces the unit to commit to its current heading long
   // enough to actually complete the maneuver, preventing the "missed turn
@@ -3184,11 +3188,13 @@ var INCIDENT_TYPES = [
   { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2, apparel:'shirt',
     template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
   { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still', apparel:'clothing',
-    template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
+    template:"There's a group of maybe three kids causing a disturbance on {street}. Wearing mostly {color}. They're being loud and harassing people." },
   { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still', apparel:'shirt',
-    template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
+    template:"There's a person in a {color} shirt down on the ground near {street}. They're not moving much. I think they need help." },
   { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still', apparel:'jacket',
-    template:"I just heard three or four gunshots from somewhere near {landmark}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
+    template:"I just heard three or four gunshots from somewhere near {street}. I see someone in a {color} jacket but they're not moving — I think they're hurt." },
+  { id:'lpr_bolo',    label:'Vehicle BOLO',                  objType:'car',    weight:2,
+    template:"911 — I just witnessed a robbery! The suspects fled in a {color} sedan, license plate {plate}, heading {direction} on {address}." }
 ];
 
 var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
@@ -3240,6 +3246,16 @@ function _ic_pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
 
 var APPAREL_ITEMS = ['shirt','jacket','hoodie','sweatshirt','vest','jersey','coat'];
 function _ic_pickApparel() { return _ic_pick(APPAREL_ITEMS); }
+
+// 6-character license plate, 3 letters + 3 digits with a space (e.g. "XYZ 123").
+// Ambiguous glyphs (I/O/Q) skipped so the plate reads cleanly in alerts.
+function _ic_pickPlate() {
+  var L = 'ABCDEFGHJKLMNPRSTUVWXYZ', D = '0123456789', s = '';
+  for (var i = 0; i < 3; i++) s += L[Math.floor(Math.random() * L.length)];
+  s += ' ';
+  for (var j = 0; j < 3; j++) s += D[Math.floor(Math.random() * D.length)];
+  return s;
+}
 
 function _ic_colorFor(objType) {
   if (objType === 'car')  return _ic_wpick(CAR_COLORS);
@@ -3325,7 +3341,9 @@ function answer911Call() {
     address:   realStreet ? (addressNum + ' ' + realStreet) : _ic_randomAddress(),
     street:    realStreet || _ic_pick(BOSTON_STREETS),
     // Landmark must reflect the actual spawn location, not a random pick
-    landmark:  _ic_nearestLandmark(pt.lat, pt.lng)
+    landmark:  _ic_nearestLandmark(pt.lat, pt.lng),
+    // License plate — only car incidents that mention {plate} actually use it
+    plate:     _ic_pickPlate()
   };
   var callText = _ic_fill(incident.template, tokens);
 
@@ -3344,6 +3362,9 @@ function answer911Call() {
       // dispatch alert and drone "visual on" alert all say the same word
       // (shirt vs jacket vs clothing).
       apparel:  (incident.objType === 'person') ? (incident.apparel || 'clothing') : null,
+      // Only attach plate if the call template actually mentioned one — so
+      // non-LPR car incidents don't claim a plate they never reported.
+      plate:    (incident.template.indexOf('{plate}') >= 0) ? tokens.plate : null,
       subkind:  incident.subkind || null,
       motion:   incident.motion  || 'moving',
       callText: callText
@@ -3369,8 +3390,10 @@ function answer911Call() {
   // incidentMeta.color + apparel — all three feeds are now consistent.
   if (typeof badGuy !== 'undefined' && badGuy) {
     var descriptor;
-    if (incident.objType === 'car')      descriptor = tokens.color + ' car';
-    else if (incident.objType === 'bike') descriptor = tokens.color + ' bicycle';
+    if (incident.objType === 'car') {
+      descriptor = tokens.color + ' car';
+      if (badGuy.incidentMeta.plate) descriptor += ' (plate ' + badGuy.incidentMeta.plate + ')';
+    } else if (incident.objType === 'bike') descriptor = tokens.color + ' bicycle';
     else descriptor = 'person in ' + tokens.color + ' ' + (incident.apparel || 'clothing');
     var locStr = (incident.template.indexOf('{address}')  >= 0) ? tokens.address
                : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
