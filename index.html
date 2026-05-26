@@ -3378,7 +3378,7 @@ function checkDetection() {
         a._inFovOf[bg.id] = true;
         recordDetection(bg, 'agent-' + a.type + '-' + a.id,
           a.cfg.label + ' ' + a.id + ' ' + (a.type === 'drone' ? 'overhead camera' : 'dash/body cam'),
-          'match: ' + _detMatch(bg));
+          'match: ' + _detMatch(bg, false));
       }
     });
     // Opportunistic target switch: if this unit can see a different unassigned
@@ -3417,9 +3417,13 @@ function checkCameraDetection() {
       if (inCameraFOV(cam, bg)) {
         cam._hasVisual = true;
         var label = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
+        // lprCapable=true: fixed cameras (traffic + surveillance) all do LPR
+        // per spec. _detMatch will surface "LPR MATCH — plate X, color vehicle"
+        // when the bg has a plate. Drone cams aren't in `cameras`, so they
+        // never reach this path.
         recordDetection(bg, 'cam-' + cam.subtype + '-' + cam.id,
           label + ' #' + cam.id,
-          'match: ' + _detMatch(bg));
+          'match: ' + _detMatch(bg, true));
       }
     });
   });
@@ -3497,14 +3501,22 @@ function recordDetection(bg, detectorKey, detectorLabel, matchSummary) {
   addAlert('warn', '<strong>' + detectorLabel + ' &mdash; visual on Incident #' + bg.id + '</strong> &mdash; ' + matchSummary + '.');
 }
 
-// Build a short "match description" string for an incident
-function _detMatch(bg) {
+// Build a short "match description" string for an incident.
+// lprCapable=true means the detector is a fixed LPR-equipped camera and should
+// surface the plate (when present) as "LPR plate XXX, [color] vehicle" — that's
+// the credit-line for the camera mesh in the alert feed. Agent dash/body cams
+// are not LPR-capable in this sim and pass false; they get the basic color+type.
+function _detMatch(bg, lprCapable) {
   var m = bg.incidentMeta || {};
   var color = m.color || '';
   if (bg.type === 'person') {
     return (color ? color + ' ' : '') + (m.apparel || 'suspect');
   }
-  return (color ? color : '') + ' ' + (bg.type === 'car' ? 'vehicle' : 'bike');
+  var base = ((color ? color + ' ' : '') + (bg.type === 'car' ? 'vehicle' : 'bike')).trim();
+  if (lprCapable && m.plate && bg.type === 'car') {
+    return 'LPR MATCH — plate ' + m.plate + ', ' + base;
+  }
+  return base;
 }
 
 // ── A* SHORTEST PATH ON ROAD GRAPH ────────────────────────────────────────────
@@ -3811,7 +3823,9 @@ var INCIDENT_TYPES = [
   { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
     template:"There's a person in a {color} shirt down on the ground near {address}. They're not moving much. I think they need help." },
   { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
-    template:"I just heard three or four gunshots from somewhere near {address}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
+    template:"I just heard three or four gunshots from somewhere near {address}. I see someone in a {color} jacket but they're not moving — I think they're hurt." },
+  { id:'lpr_plate',   label:'Plate sighting (LPR-eligible)', objType:'car',    weight:2, subkind:'lpr',
+    template:"Hi 911, I just witnessed a car driving really erratic — I caught the plate, it was {plate}, a {color} sedan heading {direction} near {address}." }
 ];
 
 var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
@@ -3915,6 +3929,19 @@ function _ic_addressAt(lat, lng) {
   if (!name) return null;
   var num = 100 + Math.floor(Math.random() * 800);
   return num + ' ' + name;
+}
+
+// MA-style synthetic plate: 3 letters + 4 digits. Skips I/O/Q to avoid
+// being confused with 1/0. Used by lpr_plate incidents — flows into the
+// 911 call text, the bg's incidentMeta, and the LPR-MATCH alert when any
+// fixed camera reads it.
+function _ic_generatePlate() {
+  var letters = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  var digits  = '0123456789';
+  var p = '';
+  for (var i = 0; i < 3; i++) p += letters.charAt(Math.floor(Math.random() * letters.length));
+  for (var j = 0; j < 4; j++) p += digits.charAt(Math.floor(Math.random() * digits.length));
+  return p;
 }
 
 function _ic_fill(tpl, tokens) {
@@ -4048,11 +4075,17 @@ function answer911Call() {
   var addressNum = 100 + Math.floor(Math.random() * 800);
   var addrStr    = addressNum + ' ' + realStreet;
   var lmName     = _ic_nearestLandmark(pt.lat, pt.lng);
+  // LPR-eligible incidents get a synthetic plate that flows through into
+  // (a) the 911 call text via {plate}, (b) the bg's incidentMeta so fixed
+  // cameras can call out an "LPR MATCH" when they read it, (c) the dispatch
+  // alert. Other car incidents (hit_run, carjack, sus_vehicle) stay color-only.
+  var plate = (incident.id === 'lpr_plate') ? _ic_generatePlate() : null;
   var tokens = {
     color:     _ic_colorFor(incident.objType),
     direction: _ic_pick(DIRECTIONS),
     address:   addrStr,
     street:    realStreet,
+    plate:     plate || '',
     // Landmark only when something is actually close (≤150m). Otherwise fall
     // back to the snapped street address — saying "near 234 Beacon Street" is
     // more accurate than referencing a landmark that's two blocks away.
@@ -4072,6 +4105,7 @@ function answer911Call() {
       label:    incident.label,
       color:    tokens.color,
       apparel:  (incident.objType === 'person') ? _ic_pickApparel() : null,
+      plate:    plate,   // null for non-LPR incidents; truthy for lpr_plate
       subkind:  incident.subkind || null,
       motion:   incident.motion  || 'moving',
       callText: callText
@@ -4102,8 +4136,12 @@ function answer911Call() {
                : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
                : (incident.template.indexOf('{landmark}') >= 0) ? tokens.landmark
                : null;
+    // LPR-eligible incidents lead with plate so the operator sees the LPR
+    // search criterion right in the dispatch alert — the camera mesh can
+    // claim the match when it fires.
+    var lprPrefix = plate ? 'LPR plate <strong>' + plate + '</strong>, ' : '';
     addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id + ' &mdash; ' + incident.label +
-      '</strong>: ' + tokens.color + ' ' + objNoun +
+      '</strong>: ' + lprPrefix + tokens.color + ' ' + objNoun +
       (locStr ? ' near ' + locStr : '') + '.');
   }
   // Re-render taskings now that metadata is set (so card shows description)
