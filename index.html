@@ -879,8 +879,8 @@ function updateAssetCounts() {
 // nearest-road position counts as "on scene".
 function checkIncidentArrival(bg) {
   if (!bg || !bg.active) return;
-  if (bg.incidentStatus === 'clearing') return;
-  // Per-unit distances from incident
+  // Per-unit distances from incident — needed for both the freeze check
+  // (runs every tick) and the one-shot clearing trigger below.
   var dists = {};
   Object.keys(bg.taskedUnits).forEach(function(type) {
     var a = bg.taskedUnits[type];
@@ -888,6 +888,23 @@ function checkIncidentArrival(bg) {
       dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
     }
   });
+  // Per-type capture radii (kept aligned with the clearing-trigger radii below)
+  var carClose     = dists.car     && dists.car.d     < 60;
+  var bikeClose    = dists.bike    && dists.bike.d    < 45;
+  var officerClose = dists.officer && dists.officer.d < 25;
+  // ── Always-on freeze: as soon as ANY non-drone is within its capture
+  // radius, the suspect stops moving. This MUST run on every tick — not just
+  // before clearing — because previously the function early-returned on
+  // 'clearing', so if a car triggered carClose (60m) before ever getting
+  // within 30m, the freeze never fired and the suspect wandered through the
+  // whole 30s clear window with every tasked unit chasing it. That was the
+  // dominant "many oscillating police elements" pattern.
+  if ((carClose || bikeClose || officerClose) && bg.maxSpeed > 0) {
+    bg.maxSpeed = 0;
+    bg.speed    = 0;
+  }
+  // Once clearing has started, nothing else in this function needs to run again
+  if (bg.incidentStatus === 'clearing') return;
   // First arrival (timer freeze) = any non-drone within 30m
   var firstArrival = null;
   ['car','bike','officer'].forEach(function(t) {
@@ -904,14 +921,6 @@ function checkIncidentArrival(bg) {
     addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
       firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
   }
-  // Clear trigger: each unit type has a generous "close enough" radius matched
-  // to what its road graph can actually reach:
-  //   - car: 60m (curb-parked when suspect is in a park/lot interior)
-  //   - bike: 45m (similar — bikes can't use footways/pedestrian paths)
-  //   - officer: 25m (on foot — usually right next to suspect)
-  var carClose     = dists.car     && dists.car.d     < 60;
-  var bikeClose    = dists.bike    && dists.bike.d    < 45;
-  var officerClose = dists.officer && dists.officer.d < 25;
   // Adaptive fallback: if any tasked unit has been within 80m of bg for 10s
   // without triggering clear, treat as arrived. This catches the case where
   // the suspect's road graph is disjoint from the unit's, leaving the unit
@@ -1857,6 +1866,11 @@ function tick() {
       if (el) el.style.opacity = (divergence < 20) ? '0.25' : '1';
     }
   });
+  // Brute-force unstick: every 4 ticks (2s) check whether any agent hasn't
+  // physically moved more than STUCK_RADIUS_M in STUCK_TIMEOUT_MS, and if so
+  // teleport it somewhere fresh. Safety net when logic can't get the unit
+  // out of a graph dead-end or disjoint-graph trap.
+  if (tickCount % 4 === 0) checkStuckAgents();
   tickCount++;
   updateFOV();
   updateCameraFOV();
@@ -2002,6 +2016,126 @@ function moveDrone(agent, dist) {
   }
   agent.lat = newLat;
   agent.lon = newLon;
+}
+
+// ── BRUTE-FORCE UNSTICK ──────────────────────────────────────────────────────
+// Safety net for agents that get geometrically trapped (disjoint road graphs,
+// nameless edge nodes, dead-end pockets that fail the no-backtrack rule, A*
+// goal nodes unreachable in the agent's allowed-highway subgraph). If logic
+// can't move them, teleport them.
+//
+// Detection: each agent stores a reference (lat, lon, since-timestamp). On
+// each check, if the agent has moved >STUCK_RADIUS_M from the reference, the
+// reference is reset to "here, now". If it hasn't moved that far in
+// STUCK_TIMEOUT_MS, the agent is considered stuck and relocated.
+//
+// Exclusions: captured agents, and pursuing agents legitimately holding within
+// 30m of their suspect — both are "not moving" but for valid reasons.
+var STUCK_RADIUS_M   = 8;     // moved less than this = not moving
+var STUCK_TIMEOUT_MS = 20000; // 20s without movement = stuck
+
+function checkStuckAgents() {
+  if (!scenarioOn) return;
+  var now = Date.now();
+  agents.forEach(function(a) {
+    if (!a || !a.lat || !a.lon) return;
+    if (a.status === 'captured') return;
+    if (!a._stuckRef) {
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    var d = haversineM(a.lat, a.lon, a._stuckRef.lat, a._stuckRef.lon);
+    if (d > STUCK_RADIUS_M) {
+      // Moved enough — reset the reference and we're good
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+      return;
+    }
+    // Hasn't moved much. Is there a legit reason? Pursuit hold within 30m of
+    // the suspect counts as "supposed to be still" — reset the reference so we
+    // don't accidentally relocate a unit that's correctly on scene.
+    if (a.status === 'pursuing' && a.taskedTo) {
+      var bg = targetFor(a);
+      if (bg && bg.active && haversineM(a.lat, a.lon, bg.lat, bg.lon) < 30) {
+        a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+        return;
+      }
+    }
+    // Genuinely stuck — relocate after the timeout
+    if (now - a._stuckRef.since > STUCK_TIMEOUT_MS) {
+      relocateAgent(a);
+      a._stuckRef = { lat: a.lat, lon: a.lon, since: now };
+    }
+  });
+}
+
+function relocateAgent(a) {
+  var wasPursuing = (a.status === 'pursuing' && a.taskedTo);
+  var oldBg      = wasPursuing ? targetFor(a) : null;
+  var oldType    = a.type;
+  var oldBgId    = wasPursuing && oldBg ? oldBg.id : null;
+  // Pick a fresh point in the operational area, snapped to a node the agent
+  // can actually traverse.
+  var pt = _ic_randomMapPoint();
+  if (a.type === 'drone') {
+    // Drones fly freely — just teleport
+    a.lat = pt.lat;
+    a.lon = pt.lng;
+  } else {
+    var snapped = roadNetworkReady ? snapToRoad(pt.lat, pt.lng, a.type)
+                                   : { lat: pt.lat, lon: pt.lng };
+    a.lat         = snapped.lat;
+    a.lon         = snapped.lon;
+    a.currentNode = nearestNode(a.lat, a.lon);
+    a.prevNode    = null;
+    a.targetNode  = null;
+    // Drop cached pursuit state so we don't try to follow a path from the old position
+    a._pursuitPath = null;
+    a._pursuitGoal = null;
+    a._pursuitSp   = null;
+    a.pauseUntil   = 0;
+  }
+  // Untask if we abandoned a pursuit — incident loses this unit-type slot
+  if (wasPursuing) {
+    if (oldBg && oldBg.taskedUnits) {
+      Object.keys(oldBg.taskedUnits).forEach(function(t) {
+        if (oldBg.taskedUnits[t] === a) delete oldBg.taskedUnits[t];
+      });
+    }
+    a.taskedTo = null;
+    a.status   = 'patrol';
+    if (a.marker && a.marker._element) {
+      a.marker._element.classList.remove('agent-tasked-glow');
+    }
+  }
+  if (a.marker) a.marker.setLngLat([a.lon, a.lat]);
+  if (a.updateMarker) a.updateMarker();
+  addAlert('warn', '⚡ ' + a.cfg.label + ' ' + a.id + ' was stuck — relocated' +
+    (wasPursuing ? ' (released from Incident #' + oldBgId + ')' : '') + '.');
+  // Backfill: if we abandoned a pursuit, dispatch the closest other available
+  // unit of the same type so the incident doesn't lose its coverage.
+  if (wasPursuing && oldBg && oldBg.active && !oldBg.taskedUnits[oldType]) {
+    var pool = agents.filter(function(x) {
+      return x.type === oldType && x.status !== 'captured' && !x.taskedTo && x !== a;
+    });
+    if (pool.length) {
+      var best = pool[0], bestD = Infinity;
+      pool.forEach(function(x) {
+        var dx = haversineM(x.lat, x.lon, oldBg.lat, oldBg.lon);
+        if (dx < bestD) { bestD = dx; best = x; }
+      });
+      best.taskedTo  = oldBg.id;
+      best.status    = 'pursuing';
+      best.pauseUntil = 0;
+      if (best.type !== 'drone') best.targetNode = best._pickPursuitTarget();
+      if (best.marker && best.marker._element) {
+        best.marker._element.classList.add('agent-tasked-glow');
+      }
+      oldBg.taskedUnits[oldType] = best;
+      addAlert('warn', best.cfg.label + ' ' + best.id +
+        ' reassigned to Incident #' + oldBgId + ' (backfill).');
+    }
+  }
+  renderTaskings();
 }
 
 // ── AUTO-START ────────────────────────────────────────────────────────────────
@@ -3282,13 +3416,13 @@ var INCIDENT_TYPES = [
   { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
     template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
   { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
-    template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
+    template:"Someone in a {color} shirt just robbed a passerby and is running {direction} near {address}. Please hurry." },
   { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still',
-    template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
+    template:"There's a group of maybe three kids causing a disturbance near {address}. Wearing mostly {color}. They're being loud and harassing people." },
   { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
-    template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
+    template:"There's a person in a {color} shirt down on the ground near {address}. They're not moving much. I think they need help." },
   { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
-    template:"I just heard three or four gunshots from somewhere near {landmark}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
+    template:"I just heard three or four gunshots from somewhere near {address}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
 ];
 
 var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
@@ -3302,7 +3436,6 @@ var BOSTON_STREETS   = ['Boylston Street','Tremont Street','Charles Street','Bea
 var BOSTON_LANDMARKS = [
   { name:'the Frog Pond',                 lat:42.3554, lon:-71.0660 },
   { name:'the Park Street T entrance',    lat:42.3565, lon:-71.0626 },
-  { name:'the Public Garden',             lat:42.3537, lon:-71.0700 },
   { name:'the State House',               lat:42.3588, lon:-71.0637 },
   { name:'the Common bandstand',          lat:42.3548, lon:-71.0648 },
   { name:'the Brewer Fountain',           lat:42.3565, lon:-71.0645 },
@@ -3319,16 +3452,22 @@ var BOSTON_LANDMARKS = [
   { name:'North Station',                 lat:42.3656, lon:-71.0622 },
   { name:'Bowdoin T station',             lat:42.3614, lon:-71.0626 }
 ];
+// Returns the closest landmark name, but only if it's actually nearby (within
+// ~150m — beyond that, a 911 caller wouldn't really describe the location by
+// reference to it). Returns null when nothing is close, so the caller can
+// substitute a real street address. 150m ≈ 1.5 blocks / a 2-minute walk.
+var LANDMARK_MAX_DIST = 150;
 function _ic_nearestLandmark(lat, lng) {
-  var best = BOSTON_LANDMARKS[0], bestD = Infinity;
+  var best = null, bestD = Infinity;
   for (var i = 0; i < BOSTON_LANDMARKS.length; i++) {
     var lm = BOSTON_LANDMARKS[i];
     var d = haversineM(lat, lng, lm.lat, lm.lon);
     if (d < bestD) { bestD = d; best = lm; }
   }
+  if (!best || bestD > LANDMARK_MAX_DIST) return null;
   return best.name;
 }
-var DIRECTIONS       = ['north','south','east','west','northbound on Tremont','southbound on Charles','eastbound on Boylston','westbound on Beacon','toward Government Center','toward the Common'];
+var DIRECTIONS       = ['north','south','east','west','northeast','northwest','southeast','southwest'];
 
 function _ic_wpick(arr) {
   var t = 0; for (var i=0;i<arr.length;i++) t += arr[i][1];
@@ -3355,9 +3494,13 @@ function _ic_randomMapPoint() {
            lng: lngMin + Math.random()*(lngMax-lngMin) };
 }
 
-function _ic_randomAddress() {
-  var num = 100 + Math.floor(Math.random() * 800);
-  return num + ' ' + _ic_pick(BOSTON_STREETS);
+// Fallback when no named street resolves at a snapped point (rare — means
+// the snapped node has no named way within 3 BFS hops). Previously returned
+// a random street from a fixed list, which mis-located the event onto a
+// street that wasn't actually near the spawn point. Now we return the
+// actual coordinates so the operator can still find the location.
+function _ic_coordAddress(lat, lng) {
+  return lat.toFixed(4) + ', ' + lng.toFixed(4);
 }
 
 function _ic_fill(tpl, tokens) {
@@ -3455,13 +3598,18 @@ function answer911Call() {
     realStreet = streetNameAtNode(nid);
   }
   var addressNum = 100 + Math.floor(Math.random() * 800);
+  var coordFallback = _ic_coordAddress(pt.lat, pt.lng);
+  var addrStr    = realStreet ? (addressNum + ' ' + realStreet) : coordFallback;
+  var lmName     = _ic_nearestLandmark(pt.lat, pt.lng);
   var tokens = {
     color:     _ic_colorFor(incident.objType),
     direction: _ic_pick(DIRECTIONS),
-    address:   realStreet ? (addressNum + ' ' + realStreet) : _ic_randomAddress(),
-    street:    realStreet || _ic_pick(BOSTON_STREETS),
-    // Landmark must reflect the actual spawn location, not a random pick
-    landmark:  _ic_nearestLandmark(pt.lat, pt.lng)
+    address:   addrStr,
+    street:    realStreet || coordFallback,
+    // Landmark only when something is actually close (≤150m). Otherwise fall
+    // back to the snapped street address — saying "near 234 Beacon Street" is
+    // more accurate than referencing a landmark that's two blocks away.
+    landmark:  lmName || addrStr
   };
   var callText = _ic_fill(incident.template, tokens);
 
