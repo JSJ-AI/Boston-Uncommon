@@ -429,7 +429,6 @@ body{display:flex;flex-direction:column;}
         <div class="abadge" data-toggle="bikes" onclick="toggleAssetType('bikes')"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge" data-toggle="officers" onclick="toggleAssetType('officers')"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge" data-toggle="traffic-cams" onclick="toggleAssetType('traffic-cams')"><span style="font-size:16px;color:#eab308;">&#128678;</span><div><div class="abn">Traffic Cams</div><div class="abc" id="c-cam-traf">0/0</div></div></div>
-        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#93c5fd;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
         <div class="abadge" data-toggle="mics" onclick="toggleAssetType('mics')"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
     </div>
@@ -863,12 +862,8 @@ function updateAssetCounts() {
       el.textContent = '0/0';
     }
   }
-  var trafCount = 0, survCount = 0;
-  cameras.forEach(function(c) {
-    if (c.subtype === 'surveillance') survCount++; else trafCount++;
-  });
-  setSensorBadge('c-cam-traf', trafCount, 'traffic-cams');
-  setSensorBadge('c-cam-surv', survCount, 'surveillance-cams');
+  // All cameras (traffic + surveillance) share one toggle now; show combined total
+  setSensorBadge('c-cam-traf', cameras.length, 'traffic-cams');
   setSensorBadge('c-mic', mics.length, 'mics');
 }
 
@@ -1120,7 +1115,7 @@ var cameras = [];           // populated after Overpass traffic_signals fetch
 // on Reset for a consistent clean start.
 var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
-  'traffic-cams': false, 'surveillance-cams': false, mics: false
+  'traffic-cams': false, mics: false
 };
 var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
 function resetAssetVisibility() {
@@ -2451,7 +2446,7 @@ function cameraFOVFeatures() {
   var feats = [];
   cameras.forEach(function(cam) {
     var isSurv = cam.subtype === 'surveillance';
-    var visible = isSurv ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
+    var visible = assetVisibility['traffic-cams'];
     if (!visible) return;
     var cfg = isSurv ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     var hot     = cam._hasVisual;
@@ -2544,7 +2539,7 @@ function placeCameras(nodes, subtype) {
   var cfg       = subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
   var label     = subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
   var kindClass = subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
-  var visKey    = subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
+  var visKey    = 'traffic-cams';
   nodes.forEach(function(n) {
     var el = document.createElement('div');
     el.className = 'cam-marker';
@@ -2672,15 +2667,13 @@ function toggleAssetType(type) {
   applyAssetVisibility();
   // Sensor toggle messages — only for sensor types, not police layer toggles.
   var sensorLabels = {
-    'traffic-cams':       'Traffic cameras',
-    'surveillance-cams':  'Surveillance cameras',
+    'traffic-cams':       'Cameras',
     'mics':               'Acoustic mesh'
   };
   if (sensorLabels[type]) {
     var count;
     if (type === 'mics') count = mics.length;
-    else if (type === 'surveillance-cams') count = cameras.filter(function(c){return c.subtype==='surveillance';}).length;
-    else count = cameras.filter(function(c){return c.subtype!=='surveillance';}).length;
+    else count = cameras.length;   // all cameras under one toggle now
     if (!wasOn) {
       // Just turned ON
       if (count > 0) {
@@ -2704,10 +2697,11 @@ function applyAssetVisibility() {
       a.marker._element.style.display = visible ? '' : 'none';
     }
   });
-  // Camera markers (split by subtype)
+  // Camera markers — all share one visibility toggle (traffic-cams) now,
+  // regardless of subtype. Underlying data still distinguishes them for
+  // popup labels and FOV ranges.
   cameras.forEach(function(c) {
-    var visible = c.subtype === 'surveillance' ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
-    c.el.style.display = visible ? '' : 'none';
+    c.el.style.display = assetVisibility['traffic-cams'] ? '' : 'none';
   });
   // Mic markers
   mics.forEach(function(m) {
@@ -3020,8 +3014,8 @@ function inCameraFOV(cam, target) {
 function checkCameraDetection() {
   if (!badGuys.length) return;
   cameras.forEach(function(cam) {
-    var visKey = cam.subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
-    if (!assetVisibility[visKey]) { cam._hasVisual = false; return; }
+    // All cameras (traffic + surveillance) share one toggle now
+    if (!assetVisibility['traffic-cams']) { cam._hasVisual = false; return; }
     cam._hasVisual = false;
     badGuys.forEach(function(bg) {
       if (!bg.active) return;
