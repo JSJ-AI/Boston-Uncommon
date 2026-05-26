@@ -1370,7 +1370,15 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
 
 async function fetchOverpass(mirrorIdx) {
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    // All live mirrors failed — try the localStorage cache before giving up
+    var cached = _osmCacheGet('roads');
+    if (cached) {
+      addAlert('info', '<strong>Using cached road network</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed');
+  }
   var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|footway|path|pedestrian|cycleway|track|service)$"]('+BBOX+'););out body;>;out skel qt;';
   try {
     var controller = new AbortController();
@@ -1381,7 +1389,9 @@ async function fetchOverpass(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('roads', data);   // cache fresh response for fallback
+    return data;
   } catch(e) {
     console.warn('Overpass mirror '+mirrorIdx+' failed:', e.message);
     return fetchOverpass(mirrorIdx + 1);
@@ -1391,7 +1401,14 @@ async function fetchOverpass(mirrorIdx) {
 // Fetch real traffic-signal intersections from OSM (one node per signalised intersection)
 async function fetchTrafficSignals(mirrorIdx) {
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (signals)');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    var cached = _osmCacheGet('signals');
+    if (cached) {
+      addAlert('info', '<strong>Using cached traffic signals</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed (signals)');
+  }
   var query = '[out:json][timeout:25];node["highway"="traffic_signals"]('+BBOX+');out body;';
   try {
     var controller = new AbortController();
@@ -1402,7 +1419,9 @@ async function fetchTrafficSignals(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('signals', data);
+    return data;
   } catch(e) {
     console.warn('Signals mirror '+mirrorIdx+' failed:', e.message);
     return fetchTrafficSignals(mirrorIdx + 1);
@@ -1412,7 +1431,14 @@ async function fetchTrafficSignals(mirrorIdx) {
 // Fetch OSM-mapped public surveillance cameras (community-tagged CCTV in public zones)
 async function fetchSurveillanceCameras(mirrorIdx) {
   mirrorIdx = mirrorIdx || 0;
-  if (mirrorIdx >= OVERPASS_MIRRORS.length) throw new Error('All Overpass mirrors failed (surveillance)');
+  if (mirrorIdx >= OVERPASS_MIRRORS.length) {
+    var cached = _osmCacheGet('surveillance');
+    if (cached) {
+      addAlert('info', '<strong>Using cached surveillance cams</strong> &mdash; Overpass unavailable, cache age: ' + _osmCacheAgeStr(cached.ts) + '.');
+      return cached.data;
+    }
+    throw new Error('All Overpass mirrors failed (surveillance)');
+  }
   // Filter to public/traffic/town zones to avoid plotting private home cameras
   var query = '[out:json][timeout:25];(' +
     'node["man_made"="surveillance"]["surveillance:zone"~"public|traffic|town|parking|transit"]('+BBOX+');' +
@@ -1427,12 +1453,60 @@ async function fetchSurveillanceCameras(mirrorIdx) {
     });
     clearTimeout(timer);
     if (!r.ok) throw new Error('HTTP '+r.status);
-    return await r.json();
+    var data = await r.json();
+    _osmCacheSet('surveillance', data);
+    return data;
   } catch(e) {
     console.warn('Surveillance mirror '+mirrorIdx+' failed:', e.message);
     return fetchSurveillanceCameras(mirrorIdx + 1);
   }
 }
+
+// ── OSM RESPONSE CACHE (localStorage) ─────────────────────────────────────────
+// Overpass API is rate-limited and goes down intermittently. After any
+// successful fetch, we cache the raw JSON response in localStorage. On a
+// subsequent load where Overpass is unreachable, fall back to the cached
+// response so the simulation still loads with real Boston data. Cache key
+// includes BBOX so a bbox change naturally invalidates. Total cache footprint
+// is typically <2MB (roads + signals + surveillance), well under the
+// browser's localStorage quota (5-10MB depending on browser).
+function _osmCacheKey(name) {
+  return 'osmCache:' + name + ':' + BBOX;
+}
+function _osmCacheGet(name) {
+  try {
+    var raw = localStorage.getItem(_osmCacheKey(name));
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (parsed && parsed.data && parsed.ts) return parsed;
+    return null;
+  } catch(e) { return null; }
+}
+function _osmCacheSet(name, data) {
+  try {
+    localStorage.setItem(_osmCacheKey(name), JSON.stringify({ data: data, ts: Date.now() }));
+  } catch(e) {
+    console.warn('OSM cache write failed for ' + name + ':', e.message);
+  }
+}
+function _osmCacheAgeStr(ts) {
+  var ms = Date.now() - ts;
+  var min = Math.round(ms / 60000);
+  if (min < 60) return min + 'min';
+  var hr = Math.round(min / 60);
+  if (hr < 24) return hr + 'h';
+  var d = Math.round(hr / 24);
+  return d + 'd';
+}
+// Dev convenience: run window.clearOSMCache() in the console to wipe cached
+// OSM data and force a fresh Overpass fetch on next load.
+window.clearOSMCache = function() {
+  var n = 0;
+  Object.keys(localStorage).forEach(function(k) {
+    if (k.indexOf('osmCache:') === 0) { localStorage.removeItem(k); n++; }
+  });
+  console.log('Cleared ' + n + ' OSM cache entries. Reload to refetch from Overpass.');
+};
 
 // ── SATELLITE SNAPSHOT (Esri World Imagery — public tiles, non-commercial use) ─
 // ── SATELLITE TILE (Esri World Imagery) + MAPILLARY STREET-LEVEL ────────────
