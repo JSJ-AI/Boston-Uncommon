@@ -1257,15 +1257,16 @@ function streetNameAtNode(nodeId) {
   // 1) Direct hit — way name at this node
   var direct = _wayNameAtNode(nodeId);
   if (direct) return direct;
-  // 2) BFS outward up to 3 hops looking for any named way. This rescues person
-  //    incidents that spawn on unnamed footways in Boston Common — they'll
-  //    resolve to the nearest named perimeter street.
+  // 2) BFS outward up to 8 hops looking for any named way. Was 3 — extended
+  //    because some unnamed footway pockets in the Common/Garden interior
+  //    were too far from any named way and the resolver was falling back to
+  //    coordinates, which is not how a 911 caller talks.
   var visited = {};
   visited[nodeId] = true;
   var queue = [{ id: nodeId, depth: 0 }];
   while (queue.length) {
     var item = queue.shift();
-    if (item.depth >= 3) continue;
+    if (item.depth >= 8) continue;
     var n = roadGraph.nodes[item.id];
     if (!n || !n.neighbors) continue;
     for (var i = 0; i < n.neighbors.length; i++) {
@@ -1277,7 +1278,21 @@ function streetNameAtNode(nodeId) {
       queue.push({ id: nb, depth: item.depth + 1 });
     }
   }
-  return null;
+  // 3) Last resort: geographically nearest named node anywhere in the graph.
+  //    O(N) but rare — fires only when 8-hop BFS failed. Guarantees we never
+  //    return null as long as the graph has any named ways at all.
+  var startN = roadGraph.nodes[nodeId];
+  var best = null, bestD = Infinity;
+  for (var j = 0; j < roadGraph.nodeIds.length; j++) {
+    var id = roadGraph.nodeIds[j];
+    if (!_wayNameAtNode(id)) continue;
+    var n2 = roadGraph.nodes[id];
+    if (!n2) continue;
+    var dlat = n2.lat - startN.lat, dlon = n2.lon - startN.lon;
+    var d2 = dlat * dlat + dlon * dlon;
+    if (d2 < bestD) { bestD = d2; best = id; }
+  }
+  return best ? _wayNameAtNode(best) : null;
 }
 
 function haversineM(lat1, lon1, lat2, lon2) {
@@ -2791,7 +2806,7 @@ function runShotsFiredTriangulation(lat, lon, opts) {
     triCrosshairMarker = new maplibregl.Marker({ element: el, anchor:'center' })
       .setLngLat([lon, lat]).addTo(map);
     addAlert('bad', '🎯 <strong>Acoustic triangulation locked</strong> — ' +
-      closest.length + ' mics, origin ' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '.');
+      closest.length + ' mics, origin near ' + (_ic_addressAt(lat, lon) || 'unresolved address') + '.');
   }, 1600));
 
   // Hold viz until t=6.6s, then clear Phase 3 viz only and spawn suspect.
@@ -2823,6 +2838,9 @@ function spawnAcousticSuspect(lat, lon) {
   var t     = types[Math.floor(Math.random() * types.length)];
   placeBadGuy(lat, lon, t);   // does snap-to-road, dispatchToIncident, timer
   if (typeof badGuy === 'undefined' || !badGuy) return;
+  // Resolve the triangulated origin to a real street address — 911 callers
+  // (even synthetic acoustic ones) describe locations by street, not coords.
+  var triAddr = _ic_addressAt(lat, lon) || 'an unresolved location';
   badGuy.incidentMeta = {
     id:       'shots_fired',
     label:    'Shots fired (acoustic)',
@@ -2830,7 +2848,7 @@ function spawnAcousticSuspect(lat, lon) {
     apparel:  null,
     subkind:  'gunshot',
     motion:   'moving',
-    callText: 'Acoustic gunshot triangulated at ' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '.'
+    callText: 'Acoustic gunshot triangulated near ' + triAddr + '.'
   };
   // motion='moving' override: give the shooter a fleeing heading + speed
   badGuy.maxSpeed = MODE_MAX_SPEED[t] || 30;
@@ -2849,7 +2867,7 @@ function spawnAcousticSuspect(lat, lon) {
   }
   addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id +
     ' &mdash; Shots fired (acoustic)</strong>: ' + t +
-    ' at triangulated origin ' + lat.toFixed(4) + ', ' + lon.toFixed(4) +
+    ' at triangulated origin near ' + triAddr +
     '. No witness description.');
   renderTaskings();
 }
@@ -2870,8 +2888,9 @@ function fireGunshot() {
     if (d <= MIC_CONFIG.radius) hearing.push({ mic:m, dist:d });
   });
   var lat = badGuy.lat, lon = badGuy.lon;
+  var shotAddr = _ic_addressAt(lat, lon) || 'an unresolved location';
   if (hearing.length === 0) {
-    addAlert('warn', '<strong>🔊 GUNSHOT</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+    addAlert('warn', '<strong>🔊 GUNSHOT</strong> near '+shotAddr+
       ' — no mic coverage. Event unconfirmed.');
     return;
   }
@@ -2879,7 +2898,7 @@ function fireGunshot() {
   renderTriangulation(hearing, lat, lon);
   // Validation alert
   var validated = hearing.length >= 3;
-  addAlert('bad', '<strong>🔊 GUNSHOT DETECTED</strong> at '+lat.toFixed(4)+', '+lon.toFixed(4)+
+  addAlert('bad', '<strong>🔊 GUNSHOT DETECTED</strong> near '+shotAddr+
     ' — '+hearing.length+' mic'+(hearing.length===1?'':'s')+' picked up event. '+
     (validated ? '<strong>Triangulation confirmed.</strong>' : 'Confidence: low ('+hearing.length+' < 3 mics).'));
   // Dispatch — all unit types head to the shooter (current bad guy position)
@@ -3488,13 +3507,18 @@ function _ic_randomMapPoint() {
            lng: lngMin + Math.random()*(lngMax-lngMin) };
 }
 
-// Fallback when no named street resolves at a snapped point (rare — means
-// the snapped node has no named way within 3 BFS hops). Previously returned
-// a random street from a fixed list, which mis-located the event onto a
-// street that wasn't actually near the spawn point. Now we return the
-// actual coordinates so the operator can still find the location.
-function _ic_coordAddress(lat, lng) {
-  return lat.toFixed(4) + ', ' + lng.toFixed(4);
+// Resolve any lat/lon to a real street address ("[house#] [street]"). Used
+// across the 911 pipeline — call text, alerts, dispatch — so the operator
+// always sees something a human caller would actually say. Returns null only
+// if the road network isn't loaded or has no named ways at all (in which case
+// callers should abort the action and surface an error).
+function _ic_addressAt(lat, lng) {
+  if (!roadNetworkReady) return null;
+  var nid = nearestNode(lat, lng);
+  var name = streetNameAtNode(nid);
+  if (!name) return null;
+  var num = 100 + Math.floor(Math.random() * 800);
+  return num + ' ' + name;
 }
 
 function _ic_fill(tpl, tokens) {
@@ -3561,10 +3585,23 @@ function answer911Call() {
       addAlert('warn', '🔇 Another gunshot incident is still active — only one at a time.');
       return;
     }
-    var origin = _ic_randomMapPoint();
-    if (roadNetworkReady) {
-      var snapped = snapToRoad(origin.lat, origin.lng, 'person');
-      origin.lat = snapped.lat; origin.lng = snapped.lon;
+    // Pick a candidate origin that resolves to a real street address — same
+    // retry loop as the normal 911 flow, so the acoustic call text references
+    // an actual street rather than coordinates.
+    if (!roadNetworkReady) {
+      addAlert('warn', 'Acoustic event dropped — road network not loaded yet.');
+      return;
+    }
+    var origin = null;
+    for (var tries = 0; tries < 5 && !origin; tries++) {
+      var cand = _ic_randomMapPoint();
+      var snapped = snapToRoad(cand.lat, cand.lng, 'person');
+      cand.lat = snapped.lat; cand.lng = snapped.lon;
+      if (streetNameAtNode(nearestNode(cand.lat, cand.lng))) origin = cand;
+    }
+    if (!origin) {
+      addAlert('warn', 'Acoustic event dropped — could not resolve a street address for origin.');
+      return;
     }
     if (!canTriangulate(origin.lat, origin.lng)) {
       var why;
@@ -3581,25 +3618,38 @@ function answer911Call() {
     return;
   }
 
-  // Phase 4.1: pick the spawn point FIRST, then look up its actual street name
-  // from the road graph so the call's address references the real spawn location.
-  var pt = _ic_randomMapPoint();
-  var realStreet = null;
-  if (roadNetworkReady) {
-    var snapped = snapToRoad(pt.lat, pt.lng, incident.objType);
-    pt.lat = snapped.lat; pt.lng = snapped.lon;
-    var nid = nearestNode(pt.lat, pt.lng);
-    realStreet = streetNameAtNode(nid);
+  // Pick a spawn point that resolves to a real street address. Retry a few
+  // times because a 911 caller would always describe their location by street
+  // — never by lat/lon. If no point in 5 tries resolves, the road network
+  // isn't usable; abort and surface the error.
+  if (!roadNetworkReady) {
+    addAlert('warn', '911 call dropped — road network not loaded yet. Try again in a moment.');
+    return;
+  }
+  var pt = null, realStreet = null;
+  for (var tries = 0; tries < 5 && !realStreet; tries++) {
+    var cand = _ic_randomMapPoint();
+    var snapped = snapToRoad(cand.lat, cand.lng, incident.objType);
+    cand.lat = snapped.lat; cand.lng = snapped.lon;
+    var nid = nearestNode(cand.lat, cand.lng);
+    var name = streetNameAtNode(nid);
+    if (name) {
+      pt = cand;
+      realStreet = name;
+    }
+  }
+  if (!realStreet) {
+    addAlert('warn', '911 call dropped — could not resolve a street address after 5 attempts (graph data may be incomplete).');
+    return;
   }
   var addressNum = 100 + Math.floor(Math.random() * 800);
-  var coordFallback = _ic_coordAddress(pt.lat, pt.lng);
-  var addrStr    = realStreet ? (addressNum + ' ' + realStreet) : coordFallback;
+  var addrStr    = addressNum + ' ' + realStreet;
   var lmName     = _ic_nearestLandmark(pt.lat, pt.lng);
   var tokens = {
     color:     _ic_colorFor(incident.objType),
     direction: _ic_pick(DIRECTIONS),
     address:   addrStr,
-    street:    realStreet || coordFallback,
+    street:    realStreet,
     // Landmark only when something is actually close (≤150m). Otherwise fall
     // back to the snapped street address — saying "near 234 Beacon Street" is
     // more accurate than referencing a landmark that's two blocks away.
