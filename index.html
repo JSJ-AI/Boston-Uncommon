@@ -220,6 +220,7 @@ body{display:flex;flex-direction:column;}
   box-shadow:0 8px 24px rgba(0,0,0,.9);font-family:'Inter',sans-serif;
   overflow:hidden;color:#fff;}
 .spop.cam-traf{border-color:#eab308;}
+.spop.cam-surv{border-color:#93c5fd;}
 .spop.ag-drone{border-color:#0284c7;}
 .spop.ag-car{border-color:#16a34a;}
 .spop.ag-bike{border-color:#ea580c;}
@@ -261,6 +262,7 @@ body{display:flex;flex-direction:column;}
   color:#fff;padding:3px 8px;border-radius:3px;font-size:10px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase;border-left:3px solid var(--acc);}
 #sensor-feed .sf-tag.cam-traf{border-left-color:#eab308;}
+#sensor-feed .sf-tag.cam-surv{border-left-color:#2563eb;}
 #sensor-feed .sf-tag.ag-drone{border-left-color:#0284c7;}
 #sensor-feed .sf-tag.ag-car{border-left-color:#16a34a;}
 #sensor-feed .sf-tag.ag-bike{border-left-color:#ea580c;}
@@ -289,6 +291,22 @@ body{display:flex;flex-direction:column;}
   width:10px;height:10px;background:#ec4899;border-radius:50%;
   box-shadow:0 0 12px #ec4899,0 0 4px white inset;}
 @keyframes gs-ring{0%{transform:scale(.4);opacity:1;}100%{transform:scale(2.6);opacity:0;}}
+
+/* ── Phase 3: shots_fired acoustic-triangulation crosshair ─────────────── */
+.tri-crosshair{width:48px;height:48px;position:relative;pointer-events:none;}
+.tri-crosshair::before,
+.tri-crosshair::after{
+  content:'';position:absolute;background:#dc2626;
+  box-shadow:0 0 8px #dc2626,0 0 16px rgba(220,38,38,.5);
+}
+.tri-crosshair::before{left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);}
+.tri-crosshair::after{top:50%;left:0;right:0;height:2px;transform:translateY(-50%);}
+.tri-crosshair .ring{position:absolute;inset:6px;border:2px solid #dc2626;border-radius:50%;
+  animation:tri-pulse 1.2s infinite ease-out;box-shadow:0 0 6px rgba(220,38,38,.6);}
+.tri-crosshair .dot{position:absolute;left:50%;top:50%;width:8px;height:8px;
+  background:#fca5a5;border-radius:50%;transform:translate(-50%,-50%);
+  box-shadow:0 0 10px #dc2626,0 0 3px white inset;}
+@keyframes tri-pulse{0%{transform:scale(.55);opacity:1;}100%{transform:scale(1.7);opacity:0;}}
 
 /* Fire Weapon button accent */
 .btn.fw{background:linear-gradient(135deg,#ec4899,#be185d);color:white;font-weight:700;
@@ -361,7 +379,7 @@ body{display:flex;flex-direction:column;}
     <h2>Welcome to Boston UnCommon</h2>
     <div class="wm-sub">Agentic AI &middot; Computer Vision &middot; 911 Deployment Simulation</div>
     <p>An <strong>agentic AI computer vision actionable intelligence model</strong> that uses computer vision and object detection from 911-call audio attributes &mdash; speech-to-text that spawns object search or pursuit.</p>
-    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
+    <p>CV AI models leverage in-camera, edge-server, and cloud processing coordinated with traffic cameras, surveillance cameras, drones, dash cams in police cars, and body-worn cameras for officers on bike or on foot.</p>
     <p class="welcome-emphasis">Press &ldquo;Answer 911 Call&rdquo; to put the Security Operations Center into action.</p>
     <p>An event object or person will be placed on the map based on call information, and then all the cameras&rsquo; fields of view can be used to locate and vector resources to resolve the 911 call tasking.</p>
     <p>This is a thought-stimulation exercise to imagine what is possible when computer vision telemetry data can be coordinated and tasking to law enforcement help is automatically deployed.</p>
@@ -411,6 +429,7 @@ body{display:flex;flex-direction:column;}
         <div class="abadge" data-toggle="bikes" onclick="toggleAssetType('bikes')"><span style="font-size:16px">&#128690;</span><div><div class="abn">Bikes</div><div class="abc" id="c-bi">0/10</div></div></div>
         <div class="abadge" data-toggle="officers" onclick="toggleAssetType('officers')"><span style="font-size:16px">&#128110;</span><div><div class="abn">Officers</div><div class="abc" id="c-of">0/10</div></div></div>
         <div class="abadge" data-toggle="traffic-cams" onclick="toggleAssetType('traffic-cams')"><span style="font-size:16px;color:#eab308;">&#128678;</span><div><div class="abn">Traffic Cams</div><div class="abc" id="c-cam-traf">0/0</div></div></div>
+        <div class="abadge" data-toggle="surveillance-cams" onclick="toggleAssetType('surveillance-cams')"><span style="font-size:16px;color:#93c5fd;">&#128249;</span><div><div class="abn">Surveillance</div><div class="abc" id="c-cam-surv">0/0</div></div></div>
         <div class="abadge" data-toggle="mics" onclick="toggleAssetType('mics')"><span style="font-size:16px;color:#ec4899;">&#127908;</span><div><div class="abn">Mics</div><div class="abc" id="c-mic">0/20</div></div></div>
       </div>
     </div>
@@ -570,8 +589,8 @@ function allSensors() {
   // Combined list of every camera-bearing object on the map
   var out = [];
   cameras.forEach(function(c) {
-    var label = 'TRAFFIC CAM';
-    var kind  = 'cam-traf';
+    var label = c.subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
+    var kind  = c.subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
     out.push({ lat:c.lat, lon:c.lon, label:label, sourceId:'#'+c.id, kindClass:kind });
   });
   var kindMap  = { drone:'ag-drone', car:'ag-car', bike:'ag-bike', officer:'ag-officer' };
@@ -779,18 +798,14 @@ function dispatchToIncident(bg) {
 // to the closest one instead of going back to patrol.
 function returnFromTasking(agent) {
   if (!agent) return;
-  // Clear current tasking state + A* cache so the next pursuit starts fresh
+  // Clear current tasking state
   agent.taskedTo = null;
   agent._hasVisual = false;
-  agent._pursuitGoal = null;
-  agent._pursuitPath = null;
-  agent._pursuitSp   = null;
-  agent._recentNodes = [];
   // Look for another active incident that needs this unit type
   var bestBg = null, bestD = Infinity;
   badGuys.forEach(function(bg) {
     if (!bg || !bg.active) return;
-    if (bg.caught || bg.incidentStatus === 'clearing') return; // already containing
+    if (bg.incidentStatus === 'clearing') return; // already containing
     if (bg.taskedUnits && bg.taskedUnits[agent.type]) return; // already has one
     var d = haversineM(agent.lat, agent.lon, bg.lat, bg.lon);
     if (d < bestD) { bestD = d; bestBg = bg; }
@@ -811,7 +826,7 @@ function returnFromTasking(agent) {
     renderTaskings();
     return;
   }
-  // Otherwise: actually return to patrol (this also handles on-scene → patrol)
+  // Otherwise: actually return to patrol
   agent.status = 'patrol';
   if (agent.marker && agent.marker._element) {
     agent.marker._element.classList.remove('agent-tasked-glow');
@@ -848,73 +863,82 @@ function updateAssetCounts() {
       el.textContent = '0/0';
     }
   }
-  // All cameras count under the single Traffic Cams badge — the OSM-tagged
-  // surveillance positions are unified into the same category visually.
-  setSensorBadge('c-cam-traf', cameras.length, 'traffic-cams');
+  var trafCount = 0, survCount = 0;
+  cameras.forEach(function(c) {
+    if (c.subtype === 'surveillance') survCount++; else trafCount++;
+  });
+  setSensorBadge('c-cam-traf', trafCount, 'traffic-cams');
+  setSensorBadge('c-cam-surv', survCount, 'surveillance-cams');
   setSensorBadge('c-mic', mics.length, 'mics');
 }
 
-// ── ARRIVAL / CATCH ──────────────────────────────────────────────────────────
-// A unit "catches" the suspect when:
-//   1. bg is in the unit's FOV (the unit literally has eyes on the suspect)
-//   2. bg is within 20m of the unit (right next to, even if facing away)
-//   3. unit is stranded at its A* goal AND bg is within 150m (closest reachable
-//      road, suspect visible across a plaza or river bank)
-//   4. unit has been stranded at its A* goal for 15+ seconds (demo timeout —
-//      so a truly unreachable bg doesn't lock the demo forever)
-//
-// When a catcher is identified:
-//   • bg.maxSpeed = bg.speed = 0    (suspect stops moving)
-//   • bg.caught = true              (one boolean — no incidentStatus dance)
-//   • bg.arrivedAt + bg.clearAt set (30s clearing countdown)
-//   • all road units tasked to this bg → status='on-scene' (they freeze;
-//     moveAgent skips on-scene units. No per-tick distance checks needed.)
-//   • response timer freezes, alert fires
+// Per-tick: did a tasked unit reach the incident? Capture timer logic per-bg.
+// Arrival thresholds are deliberately generous because police cars and bikes
+// often can't drive ONTO the road the suspect is on (suspect on a footway in
+// Boston Common, car stuck at the nearest curb 40-80m away). For a demo, the
+// nearest-road position counts as "on scene".
 function checkIncidentArrival(bg) {
-  if (!bg || !bg.active || bg.caught) return;
-  var catcher = null, catchReason = '';
-  ['car','bike','officer'].forEach(function(type) {
-    if (catcher) return;
+  if (!bg || !bg.active) return;
+  if (bg.incidentStatus === 'clearing') return;
+  // Per-unit distances from incident
+  var dists = {};
+  Object.keys(bg.taskedUnits).forEach(function(type) {
     var a = bg.taskedUnits[type];
-    if (!a) return;
-    // (1) FOV — visual contact
-    if (typeof inFOV === 'function' && inFOV(a, bg)) {
-      catcher = a; catchReason = 'visual'; return;
+    if (a && a.status === 'pursuing') {
+      dists[type] = { agent: a, d: haversineM(a.lat, a.lon, bg.lat, bg.lon) };
     }
-    var d = haversineM(a.lat, a.lon, bg.lat, bg.lon);
-    // (2) Right next to, regardless of facing
-    if (d < 20) { catcher = a; catchReason = 'proximity'; return; }
-    // (3) Stranded at A* goal but reasonably close
-    if (a._pursuitGoal && a.currentNode === a._pursuitGoal) {
-      if (d < 150) { catcher = a; catchReason = 'stranded-close'; return; }
-      // (4) Long-stranded timeout
-      a._strandedSince = a._strandedSince || Date.now();
-      if (Date.now() - a._strandedSince > 15000) {
-        catcher = a; catchReason = 'stranded-timeout'; return;
+  });
+  // First arrival (timer freeze) = any non-drone within 30m
+  var firstArrival = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 30 && !firstArrival) firstArrival = dists[t].agent;
+  });
+  if (firstArrival && !bg.timerEnd) {
+    bg.timerEnd = Date.now();
+    bg.maxSpeed = 0;
+    bg.speed = 0;
+    bg.incidentStatus = 'arrived';
+    var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
+    responseTimings.push(respSec);
+    updateAvgResponseDisplay();
+    addAlert('warn', '<strong>Incident #' + bg.id + ' arrival</strong> &mdash; ' +
+      firstArrival.cfg.label + ' ' + firstArrival.id + ' on scene. Response: ' + respSec + 's.');
+  }
+  // Clear trigger: each unit type has a generous "close enough" radius matched
+  // to what its road graph can actually reach:
+  //   - car: 60m (curb-parked when suspect is in a park/lot interior)
+  //   - bike: 45m (similar — bikes can't use footways/pedestrian paths)
+  //   - officer: 25m (on foot — usually right next to suspect)
+  var carClose     = dists.car     && dists.car.d     < 60;
+  var bikeClose    = dists.bike    && dists.bike.d    < 45;
+  var officerClose = dists.officer && dists.officer.d < 25;
+  // Adaptive fallback: if any tasked unit has been within 80m of bg for 10s
+  // without triggering clear, treat as arrived. This catches the case where
+  // the suspect's road graph is disjoint from the unit's, leaving the unit
+  // physically stuck just outside the normal threshold.
+  if (!bg._near80SinceTs) bg._near80SinceTs = {};
+  var stuckClose = false, stuckAgent = null;
+  ['car','bike','officer'].forEach(function(t) {
+    if (dists[t] && dists[t].d < 80) {
+      if (!bg._near80SinceTs[t]) bg._near80SinceTs[t] = Date.now();
+      if (Date.now() - bg._near80SinceTs[t] > 10000 && !stuckClose) {
+        stuckClose = true; stuckAgent = dists[t].agent;
       }
     } else {
-      a._strandedSince = 0;
+      bg._near80SinceTs[t] = 0;
     }
   });
-  if (!catcher) return;
-  // Catch! One transition does everything.
-  bg.caught = true;
-  bg.timerEnd = Date.now();
-  bg.maxSpeed = 0;
-  bg.speed = 0;
-  bg.incidentStatus = 'clearing';
-  bg.arrivedAt = Date.now();
-  bg.clearAt = bg.arrivedAt + 30000;
-  Object.keys(bg.taskedUnits).forEach(function(t) {
-    if (t === 'drone') return;
-    var a = bg.taskedUnits[t];
-    if (a && a.status === 'pursuing') a.status = 'on-scene';
-  });
-  var respSec = Math.round((bg.timerEnd - bg.timerStart) / 1000);
-  responseTimings.push(respSec);
-  updateAvgResponseDisplay();
-  addAlert('ok', '<strong>Incident #' + bg.id + ' contained</strong> &mdash; ' +
-    catcher.cfg.label + ' ' + catcher.id + ' on scene. Response: ' + respSec + 's. Clearing in 30s...');
+  if ((carClose || bikeClose || officerClose || stuckClose) && !bg.arrivedAt) {
+    bg.arrivedAt = Date.now();
+    bg.clearAt = bg.arrivedAt + 30000;
+    bg.incidentStatus = 'clearing';
+    var who = carClose ? dists.car.agent
+            : officerClose ? dists.officer.agent
+            : bikeClose ? dists.bike.agent
+            : stuckAgent;
+    addAlert('ok', 'Incident #' + bg.id + ' contained by ' +
+      who.cfg.label + ' ' + who.id + '. Clearing in 30s...');
+  }
 }
 
 function updateAvgResponseDisplay() {
@@ -993,7 +1017,6 @@ function renderTaskings() {
     } else {
       var typeWord = (bg.type === 'car') ? 'vehicle' : (bg.type === 'bike' ? 'bike' : bg.type);
       desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
-      if (meta.plate) desc += ' &middot; plate ' + meta.plate;
     }
     // Timer: live if !timerEnd, frozen at response time if set
     var elapsedMs = (bg.timerEnd || now) - bg.timerStart;
@@ -1077,17 +1100,18 @@ var AGENT_CONFIG = {
 
 // Traffic camera config — 4 wedges/camera (N,E,S,W) = net 360° per intersection
 var CAMERA_CONFIG = { fovAngle:90, fovDist:80, color:'#eab308' };
-// OSM-tagged public CCTV positions — shorter range (50m) reflects the
-// real-world fixed-camera coverage but visually unified with traffic cams.
-var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#eab308' };
+// Public surveillance cameras (OSM man_made=surveillance, public-zone only)
+// Color is blue (distinct from drone sky-blue) so they read as a separate sensor class
+var SURVEILLANCE_CONFIG = { fovAngle:90, fovDist:50, color:'#93c5fd' };
 var cameras = [];           // populated after Overpass traffic_signals fetch
 // Unified visibility map — each badge in the asset grid toggles one of these.
 // Single source of truth for all on/off layer controls.
-// Defaults: cameras and mics start OFF for a less-cluttered initial view.
-// Same defaults restored on Reset for a consistent clean start.
+// Defaults: traffic cams and mics start OFF for a less-cluttered initial view;
+// surveillance cams stay on (sparser, more interesting). Same defaults restored
+// on Reset for a consistent clean start.
 var DEFAULT_VISIBILITY = {
   drones: true, vehicles: true, bikes: true, officers: true,
-  'traffic-cams': false, mics: false
+  'traffic-cams': false, 'surveillance-cams': false, mics: false
 };
 var assetVisibility = Object.assign({}, DEFAULT_VISIBILITY);
 function resetAssetVisibility() {
@@ -1106,8 +1130,8 @@ var roadGraph = { nodes:{}, segments:[], nodeIds:[] };
 
 // Highway types each agent type can use
 var ALLOWED_HIGHWAYS = {
-  car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service|living_street|road|busway)$/,
-  bike:    /^(secondary|tertiary|.*_link|residential|unclassified|service|cycleway|path|track|living_street|road)$/,
+  car:     /^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|.*_link|service)$/,
+  bike:    /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|track|living_street)$/,
   officer: /^(tertiary|tertiary_link|residential|unclassified|service|cycleway|path|footway|pedestrian|track|living_street)$/,
   drone:   null // aerial — no restriction
 };
@@ -1210,29 +1234,18 @@ function nearestNode(lat, lon) {
   return best;
 }
 
-// Return the name of the dominant street touching this node. At an intersection
-// (multiple ways meeting at one node), picks the way with the MOST edges
-// through this node — that's the road the spawn point is "on", not a side
-// street that just touches it. Fixes the Storrow/Charles confusion at Charles
-// Circle-type junctions.
+// Return the name of any street touching this road-graph node (or null if unnamed)
 function _wayNameAtNode(nodeId) {
   var n = roadGraph.nodes[nodeId];
   if (!n || !n.neighborHW || !roadGraph.wayNames) return null;
-  var votes = {};   // wayId → edge count
-  var names = {};   // wayId → name
   var keys = Object.keys(n.neighborHW);
   for (var i = 0; i < keys.length; i++) {
     var info = n.neighborHW[keys[i]];
     if (info && info.wayId && roadGraph.wayNames[info.wayId]) {
-      votes[info.wayId] = (votes[info.wayId] || 0) + 1;
-      names[info.wayId] = roadGraph.wayNames[info.wayId];
+      return roadGraph.wayNames[info.wayId];
     }
   }
-  var bestId = null, bestV = 0;
-  for (var wid in votes) {
-    if (votes[wid] > bestV) { bestV = votes[wid]; bestId = wid; }
-  }
-  return bestId ? names[bestId] : null;
+  return null;
 }
 
 function streetNameAtNode(nodeId) {
@@ -1396,7 +1409,7 @@ function fetchMapillarySnapshot(lat, lon) {
 }
 
 // Pick the right imagery source for a sensor type
-// kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf'
+// kindClass values: 'ag-drone' | 'ag-car' | 'ag-bike' | 'ag-officer' | 'cam-traf' | 'cam-surv'
 function getSensorImage(lat, lon, kindClass) {
   // Drones: aerial (synchronous Esri tile) — that's literally what a drone sees
   if (kindClass === 'ag-drone') {
@@ -1590,13 +1603,10 @@ Agent.prototype._pickTarget = function() {
 
   var self = this;
   var hwFilter = ALLOWED_HIGHWAYS[this.type];
-  // Anti-oscillation: track last 3 visited nodes so the agent doesn't bounce
-  // back and forth between two nodes at a dead-end-ish junction.
-  this._recentNodes = this._recentNodes || [];
 
-  function _passes(nid, skipRecent) {
+  // Build valid candidate list: no backtracking, within home radius, correct highway type
+  var valid = n.neighbors.filter(function(nid) {
     if (nid == self.prevNode) return false;
-    if (!skipRecent && self._recentNodes.indexOf(nid) >= 0) return false;
     var nb = roadGraph.nodes[nid];
     if (!nb) return false;
     if (haversineM(nb.lat, nb.lon, self.homeLat, self.homeLon) > HOME_RADIUS_M) return false;
@@ -1606,19 +1616,9 @@ Agent.prototype._pickTarget = function() {
       if (!hwFilter.test(hw)) return false;
     }
     return true;
-  }
+  });
 
-  // Pass 1: standard filter + avoid recently-visited (the anti-oscillation pass)
-  var valid = n.neighbors.filter(function(nid) { return _passes(nid, false); });
-  // Pass 2: relax the "avoid recent" constraint
-  if (!valid.length) valid = n.neighbors.filter(function(nid) { return _passes(nid, true); });
-  // Pass 3: relax home radius and hwFilter (any reachable non-prev neighbor)
-  if (!valid.length) {
-    valid = n.neighbors.filter(function(nid) {
-      return nid != self.prevNode && roadGraph.nodes[nid];
-    });
-  }
-  // Pass 4: truly stuck — allow backtrack as absolute last resort
+  // Dead end — allow backtracking
   if (!valid.length) {
     valid = n.neighbors.filter(function(nid) { return roadGraph.nodes[nid]; });
   }
@@ -1864,19 +1864,11 @@ function tick() {
   checkCameraDetection();
 }
 
-// Pursuit speed multipliers per unit type. Car is dramatically faster than
-// bike in real police chases (interceptor at 70+ mph, bike ~18 mph max) and
-// the demo should reflect that visually.
-var PURSUIT_MULT = { drone: 1.5, car: 3.0, bike: 1.8, officer: 2.0 };
 function moveAgent(agent) {
-  // Single hold rule: on-scene units don't move. checkIncidentArrival sets
-  // this status the moment any unit catches the bg; all tasked road units
-  // then freeze together. Replaces the per-tick distance hold check.
-  if (agent.status === 'on-scene') {
-    agent.updateMarker && agent.updateMarker();
-    return;
-  }
-  var speedMult = (agent.status === 'pursuing') ? (PURSUIT_MULT[agent.type] || 2.0) : 1.0;
+  // Pursuit mode: 50% speed boost
+  // Pursuit speed multiplier — units in pursuit go significantly faster than
+  // patrol so they reach the scene in demo-scale time (~60-90s rather than minutes).
+  var speedMult = (agent.status === 'pursuing') ? 2.2 : 1.0;
   var dist = (agent.cfg.speed / 3.6) * (TICK_MS / 1000) * SIM_SPEED * speedMult;
   if (agent.type === 'drone') {
     moveDrone(agent, dist);
@@ -1888,6 +1880,19 @@ function moveAgent(agent) {
 
 // ── ROAD AGENT MOVEMENT ───────────────────────────────────────────────────────
 function moveRoadAgent(agent, remainDist) {
+  // Pursuit hold: stop moving once the agent is at the scene. Without this,
+  // A* keeps recomputing the path as the search position drifts a few metres
+  // and the agent oscillates back and forth between adjacent road nodes.
+  if (agent.status === 'pursuing' && agent.taskedTo) {
+    var holdTgt = targetFor(agent);
+    if (holdTgt && holdTgt.active) {
+      var holdSp = searchPos(holdTgt);
+      if (haversineM(agent.lat, agent.lon, holdSp.lat, holdSp.lon) < 30) {
+        agent.updateMarker && agent.updateMarker();
+        return;
+      }
+    }
+  }
   // Skip intersection pause when pursuing — police don't stop at red lights in pursuit
   if (agent.status !== 'pursuing' && agent.pauseUntil && Date.now() < agent.pauseUntil) {
     if (agent.targetNode && roadGraph.nodes[agent.targetNode]) {
@@ -1919,10 +1924,6 @@ function moveRoadAgent(agent, remainDist) {
       agent.lon = target.lon;
       agent.prevNode    = agent.currentNode;
       agent.currentNode = agent.targetNode;
-      // Track last 3 visited nodes for anti-oscillation in _pickTarget
-      agent._recentNodes = agent._recentNodes || [];
-      agent._recentNodes.push(agent.currentNode);
-      while (agent._recentNodes.length > 3) agent._recentNodes.shift();
       var arrNode2 = roadGraph.nodes[agent.prevNode];
       if (arrNode2 && arrNode2.neighborHW && arrNode2.neighborHW[agent.currentNode]) {
         var edgeInfo2 = arrNode2.neighborHW[agent.currentNode];
@@ -2083,9 +2084,6 @@ function badGuyPopupHTML(bg) {
     var typeWord = (bg.type === 'car') ? 'Vehicle' : (bg.type === 'bike' ? 'Bike' : bg.type);
     desc = (color ? (color.charAt(0).toUpperCase() + color.slice(1) + ' ') : '') + typeWord;
   }
-  var plateLine = meta.plate
-    ? '<div style="font:600 11px \'JetBrains Mono\',monospace;color:#fbbf24;letter-spacing:.12em;margin-bottom:6px;border:1px solid rgba(251,191,36,.55);border-radius:4px;padding:2px 6px;display:inline-block;">PLATE ' + meta.plate + '</div>'
-    : '';
   var taskedList = [];
   ['car','bike','officer','drone'].forEach(function(t){
     var a = bg.taskedUnits && bg.taskedUnits[t];
@@ -2094,7 +2092,6 @@ function badGuyPopupHTML(bg) {
   return '<div style="font:600 10px sans-serif;letter-spacing:.6px;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Incident #' + (bg.id||'?') + '</div>' +
     '<div style="font:600 12px sans-serif;color:#ffffff;margin-bottom:3px;">' + (meta.label || 'Suspect') + '</div>' +
     '<div style="font:11px sans-serif;color:#e2e8f0;margin-bottom:6px;">' + desc + '</div>' +
-    plateLine +
     '<div style="font:10px sans-serif;color:#7dd3fc;margin-bottom:3px;">' + statusText + '</div>' +
     '<div style="font:10px \'JetBrains Mono\',monospace;color:#f59e0b;margin-bottom:3px;">Response time: ' + timer + '</div>' +
     (taskedList.length ? '<div style="font:10px sans-serif;color:#94a3b8;">Tasked: ' + taskedList.join(', ') + '</div>' : '');
@@ -2315,8 +2312,9 @@ function cameraFOVFeatures() {
   // Wedges filtered out for camera types whose layer toggle is off.
   var feats = [];
   cameras.forEach(function(cam) {
-    if (!assetVisibility['traffic-cams']) return;
     var isSurv = cam.subtype === 'surveillance';
+    var visible = isSurv ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
+    if (!visible) return;
     var cfg = isSurv ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
     var hot     = cam._hasVisual;
     var color   = hot ? '#ef4444' : cfg.color;
@@ -2406,9 +2404,9 @@ function placeCameras(nodes, subtype) {
   // subtype: 'traffic' (default) or 'surveillance'
   subtype = subtype || 'traffic';
   var cfg       = subtype === 'surveillance' ? SURVEILLANCE_CONFIG : CAMERA_CONFIG;
-  var label     = 'TRAFFIC CAM';
-  var kindClass = 'cam-traf';
-  var visKey    = 'traffic-cams';
+  var label     = subtype === 'surveillance' ? 'SURVEILLANCE CAM' : 'TRAFFIC CAM';
+  var kindClass = subtype === 'surveillance' ? 'cam-surv' : 'cam-traf';
+  var visKey    = subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
   nodes.forEach(function(n) {
     var el = document.createElement('div');
     el.className = 'cam-marker';
@@ -2449,6 +2447,13 @@ function setupMicMeshLayer() {
     paint:{ 'fill-color': MIC_CONFIG.color, 'fill-opacity': 0.18 } }, 'fov-cam-fill');
   map.addLayer({ id:'mic-tri-outline', type:'line', source:'mic-tri',
     paint:{ 'line-color': MIC_CONFIG.color, 'line-opacity': 0.6, 'line-width': 1.4 } }, 'fov-cam-fill');
+
+  // Phase 3: shots_fired acoustic-triangulation rays (amber dashed lines from
+  // closest mics to the triangulated origin). Populated by runShotsFiredTriangulation,
+  // cleared by clearTriangulation. Added without a 'before' arg so it renders on top.
+  map.addSource('tri-lines', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({ id:'tri-lines-layer', type:'line', source:'tri-lines',
+    paint:{ 'line-color':'#f59e0b', 'line-opacity':0.9, 'line-width':2.4, 'line-dasharray':[2, 2] } });
 }
 
 function micMeshFeatures() {
@@ -2530,12 +2535,14 @@ function toggleAssetType(type) {
   // Sensor toggle messages — only for sensor types, not police layer toggles.
   var sensorLabels = {
     'traffic-cams':       'Traffic cameras',
+    'surveillance-cams':  'Surveillance cameras',
     'mics':               'Acoustic mesh'
   };
   if (sensorLabels[type]) {
     var count;
     if (type === 'mics') count = mics.length;
-    else if (type === 'traffic-cams') count = cameras.length;
+    else if (type === 'surveillance-cams') count = cameras.filter(function(c){return c.subtype==='surveillance';}).length;
+    else count = cameras.filter(function(c){return c.subtype!=='surveillance';}).length;
     if (!wasOn) {
       // Just turned ON
       if (count > 0) {
@@ -2559,9 +2566,9 @@ function applyAssetVisibility() {
       a.marker._element.style.display = visible ? '' : 'none';
     }
   });
-  // Camera markers — all under the unified traffic-cams toggle
+  // Camera markers (split by subtype)
   cameras.forEach(function(c) {
-    var visible = assetVisibility['traffic-cams'];
+    var visible = c.subtype === 'surveillance' ? assetVisibility['surveillance-cams'] : assetVisibility['traffic-cams'];
     c.el.style.display = visible ? '' : 'none';
   });
   // Mic markers
@@ -2585,6 +2592,135 @@ function applyAssetVisibility() {
 // Triangulation = which mics heard it; the viz pins to the shot's lat/lon
 // and persists until capture (cleared via clearIncident).
 var gunshotMarker = null;
+
+// ── Phase 3: shots_fired acoustic triangulation (auto, no human witness) ──
+// Distinct from the manual "Fire Weapon" path (fireGunshot below). When the
+// 911 call roller hits 'shots_fired' AND mic coverage is good enough, we run
+// a 5s viz: 3 staggered amber rays in (300/800/1300 ms) → red crosshair at
+// 1.6s → hold until 6.6s → spawn the suspect at the triangulated origin with
+// stripped metadata (no color/apparel — acoustic-only intel).
+var TRI_ACTIVE = false;
+var triCrosshairMarker = null;
+var triTimeouts = [];           // pending stagger timers — cancelled on Reset
+
+// 400m is a stricter "triangulation quality" threshold (vs the 700m audibility
+// radius). Three close mics give enough geometric diversity to localize.
+var TRI_QUALITY_RADIUS = 400;
+
+function canTriangulate(lat, lon) {
+  if (!assetVisibility.mics) return false;
+  if (!mics.length) return false;
+  var n = 0;
+  for (var i = 0; i < mics.length; i++) {
+    if (haversineM(mics[i].lat, mics[i].lon, lat, lon) <= TRI_QUALITY_RADIUS) n++;
+    if (n >= 3) return true;
+  }
+  return false;
+}
+
+function _triClosestMics(lat, lon, k) {
+  return mics
+    .map(function(m){ return { mic:m, dist: haversineM(m.lat, m.lon, lat, lon) }; })
+    .sort(function(a,b){ return a.dist - b.dist; })
+    .slice(0, k);
+}
+
+function _triLineFeature(mic, lat, lon) {
+  return { type:'Feature', geometry:{ type:'LineString',
+    coordinates: [[mic.lon, mic.lat], [lon, lat]] }, properties:{} };
+}
+
+function runShotsFiredTriangulation(lat, lon, opts) {
+  // opts.onComplete(lat, lon) fires at t=6600 ms, immediately after the viz clears.
+  TRI_ACTIVE = true;
+  var closest = _triClosestMics(lat, lon, 3);
+  var feats   = [];
+  var src     = map.getSource('tri-lines');
+
+  // Per-mic ray stagger: 300 / 800 / 1300 ms
+  var stagger = [300, 800, 1300];
+  closest.forEach(function(h, i) {
+    var t = setTimeout(function() {
+      feats.push(_triLineFeature(h.mic, lat, lon));
+      if (src) src.setData({ type:'FeatureCollection', features: feats });
+      addAlert('warn', '🎤 <strong>Mic #' + h.mic.id +
+        '</strong> — acoustic event detected (' + Math.round(h.dist) + 'm).');
+    }, stagger[i] || 0);
+    triTimeouts.push(t);
+  });
+
+  // Red pulsing crosshair drops at t=1.6s
+  triTimeouts.push(setTimeout(function() {
+    if (triCrosshairMarker) triCrosshairMarker.remove();
+    var el = document.createElement('div');
+    el.className = 'tri-crosshair';
+    el.innerHTML = '<div class="ring"></div><div class="dot"></div>';
+    el.title = 'Triangulated gunshot origin';
+    triCrosshairMarker = new maplibregl.Marker({ element: el, anchor:'center' })
+      .setLngLat([lon, lat]).addTo(map);
+    addAlert('bad', '🎯 <strong>Acoustic triangulation locked</strong> — ' +
+      closest.length + ' mics, origin ' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '.');
+  }, 1600));
+
+  // Hold viz until t=6.6s, then clear Phase 3 viz only and spawn suspect.
+  // (We don't call full clearTriangulation here — that would also wipe any
+  // manual-fire-weapon gunshot viz the operator may have running.)
+  triTimeouts.push(setTimeout(function() {
+    _clearTriPhase3Viz();
+    TRI_ACTIVE = false;
+    if (opts && typeof opts.onComplete === 'function') {
+      opts.onComplete(lat, lon);
+    }
+  }, 6600));
+}
+
+// Phase 3 viz cleanup only — does NOT touch the manual-fire-weapon gunshotMarker
+// or the mic-tri (700m hearing-mic) overlay. Called at the end of the 6.6s timer
+// and (via clearTriangulation) on Reset.
+function _clearTriPhase3Viz() {
+  var ts = map.getSource('tri-lines');
+  if (ts) ts.setData({ type:'FeatureCollection', features: [] });
+  if (triCrosshairMarker) { triCrosshairMarker.remove(); triCrosshairMarker = null; }
+  triTimeouts.forEach(function(t) { clearTimeout(t); });
+  triTimeouts = [];
+}
+
+function spawnAcousticSuspect(lat, lon) {
+  // Random type, equal weight. NO description metadata — acoustic only.
+  var types = ['car','bike','person'];
+  var t     = types[Math.floor(Math.random() * types.length)];
+  placeBadGuy(lat, lon, t);   // does snap-to-road, dispatchToIncident, timer
+  if (typeof badGuy === 'undefined' || !badGuy) return;
+  badGuy.incidentMeta = {
+    id:       'shots_fired',
+    label:    'Shots fired (acoustic)',
+    color:    null,
+    apparel:  null,
+    subkind:  'gunshot',
+    motion:   'moving',
+    callText: 'Acoustic gunshot triangulated at ' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '.'
+  };
+  // motion='moving' override: give the shooter a fleeing heading + speed
+  badGuy.maxSpeed = MODE_MAX_SPEED[t] || 30;
+  badGuy.speed    = badGuy.maxSpeed * (0.7 + Math.random() * 0.3);
+  badGuy.bearing  = Math.random() * 360;
+  // Update call-display panel + alert + taskings card
+  var disp  = document.getElementById('call-display');
+  var label = document.getElementById('call-label');
+  var body  = document.getElementById('call-body');
+  var meta  = document.getElementById('call-meta');
+  if (disp && label && body) {
+    disp.style.display = 'block';
+    label.textContent = 'Shots fired (acoustic)';
+    body.textContent  = '— Acoustic triangulation only — no witness description —';
+    if (meta) meta.textContent = 'Search criteria: ' + t + ' / unknown description';
+  }
+  addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id +
+    ' &mdash; Shots fired (acoustic)</strong>: ' + t +
+    ' at triangulated origin ' + lat.toFixed(4) + ', ' + lon.toFixed(4) +
+    '. No witness description.');
+  renderTaskings();
+}
 
 function fireGunshot() {
   if (!badGuy || !badGuy.active) {
@@ -2646,6 +2782,9 @@ function clearTriangulation() {
   if (src) src.setData({ type:'FeatureCollection', features: [] });
   mics.forEach(function(m) { m.el.classList.remove('mic-hearing'); });
   if (gunshotMarker) { gunshotMarker.remove(); gunshotMarker = null; }
+  // Phase 3: also wipe acoustic-triangulation lines + crosshair + pending timers
+  _clearTriPhase3Viz();
+  TRI_ACTIVE = false;
 }
 
 function dispatchAcoustic(validated) {
@@ -2743,14 +2882,16 @@ function inCameraFOV(cam, target) {
 function checkCameraDetection() {
   if (!badGuys.length) return;
   cameras.forEach(function(cam) {
-    if (!assetVisibility['traffic-cams']) { cam._hasVisual = false; return; }
+    var visKey = cam.subtype === 'surveillance' ? 'surveillance-cams' : 'traffic-cams';
+    if (!assetVisibility[visKey]) { cam._hasVisual = false; return; }
     cam._hasVisual = false;
     badGuys.forEach(function(bg) {
       if (!bg.active) return;
       if (inCameraFOV(cam, bg)) {
         cam._hasVisual = true;
+        var label = cam.subtype === 'surveillance' ? 'Surveillance Cam' : 'Traffic Cam';
         recordDetection(bg, 'cam-' + cam.subtype + '-' + cam.id,
-          'Traffic Cam #' + cam.id,
+          label + ' #' + cam.id,
           'match: ' + _detMatch(bg));
       }
     });
@@ -2836,9 +2977,7 @@ function _detMatch(bg) {
   if (bg.type === 'person') {
     return (color ? color + ' ' : '') + (m.apparel || 'suspect');
   }
-  var s = (color ? color + ' ' : '') + (bg.type === 'car' ? 'vehicle' : 'bike');
-  if (m.plate) s += ' (plate ' + m.plate + ')';
-  return s;
+  return (color ? color : '') + ' ' + (bg.type === 'car' ? 'vehicle' : 'bike');
 }
 
 // ── A* SHORTEST PATH ON ROAD GRAPH ────────────────────────────────────────────
@@ -2910,23 +3049,12 @@ Agent.prototype._pickPursuitTarget = function() {
   if (!n || !n.neighbors.length) return this.currentNode;
   var sp = searchPos(tgt);
 
-  // Early exit: if I'm already at my goal node, stay. No more turn choices that
-  // could send me back the way I came.
-  if (this._pursuitGoal && this.currentNode === this._pursuitGoal) {
-    return this.currentNode;
-  }
-
   // ── Goal: nearest road-graph node to searchPos, in THIS agent's allowed graph
-  // (cached — only recompute if searchPos has drifted by 20m+ AND we're not
-  // already in the vicinity — once close, commit to current goal to avoid
-  // oscillation from goal flipping between adjacent road nodes as the suspect
-  // moves a few metres).
-  var agentToBg = haversineM(this.lat, this.lon, sp.lat, sp.lon);
-  var inVicinity = agentToBg < 120;
+  // (cached — only recompute if searchPos has drifted by 20m+)
   var spDrift = this._pursuitSp
     ? haversineM(this._pursuitSp.lat, this._pursuitSp.lon, sp.lat, sp.lon)
     : Infinity;
-  if (spDrift > 20 && !inVicinity) {
+  if (spDrift > 20) {
     var pool = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
     var gId = null, gD = Infinity;
     for (var i = 0; i < pool.length; i++) {
@@ -2938,18 +3066,6 @@ Agent.prototype._pickPursuitTarget = function() {
     this._pursuitGoal = gId;
     this._pursuitSp = { lat: sp.lat, lon: sp.lon };
     this._pursuitPath = null;     // invalidate cached path
-  } else if (!this._pursuitGoal) {
-    // First call — initialize goal regardless of vicinity
-    var pool0 = (roadGraph.nodesByType && roadGraph.nodesByType[this.type]) || roadGraph.nodeIds;
-    var gId0 = null, gD0 = Infinity;
-    for (var i0 = 0; i0 < pool0.length; i0++) {
-      var pn0 = roadGraph.nodes[pool0[i0]];
-      if (!pn0) continue;
-      var d0 = haversineM(pn0.lat, pn0.lon, sp.lat, sp.lon);
-      if (d0 < gD0) { gD0 = d0; gId0 = pool0[i0]; }
-    }
-    this._pursuitGoal = gId0;
-    this._pursuitSp = { lat: sp.lat, lon: sp.lon };
   }
 
   if (!this._pursuitGoal) return n.neighbors[0];
@@ -2960,14 +3076,19 @@ Agent.prototype._pickPursuitTarget = function() {
     this._pursuitPath = findRoadPath(this.currentNode, this._pursuitGoal, hwFilter);
   }
 
-  // No path (goal unreachable from here in this agent's graph) — STOP.
-  // Mark currentNode as the new goal so the at-goal early exit kicks in next
-  // tick, and the arrival logic in checkIncidentArrival counts this as
-  // on-scene. This is what prevents the "car at bridge underpass oscillating
-  // because no road edge takes me over the river" pathology.
+  // No path (goal unreachable from here in this agent's graph) — fall back
+  // to greedy single-hop so the unit at least moves toward the suspect
   if (!this._pursuitPath || !this._pursuitPath.length) {
-    this._pursuitGoal = this.currentNode;
-    return this.currentNode;
+    var any = n.neighbors.filter(function(nid){ return roadGraph.nodes[nid]; });
+    if (!any.length) return this.currentNode;
+    var goalNode = roadGraph.nodes[this._pursuitGoal];
+    var best = any[0], bestD = Infinity;
+    any.forEach(function(nid) {
+      var nb = roadGraph.nodes[nid];
+      var d = haversineM(nb.lat, nb.lon, goalNode.lat, goalNode.lon);
+      if (d < bestD) { bestD = d; best = nid; }
+    });
+    return best;
   }
 
   // ── Follow the path: next node after current
@@ -2975,24 +3096,7 @@ Agent.prototype._pickPursuitTarget = function() {
   if (idx === -1 || idx >= this._pursuitPath.length - 1) {
     return this.currentNode;     // at goal node — stay (arrival logic takes over)
   }
-  var nextNode = this._pursuitPath[idx + 1];
-  // U-turn cooldown: a >120° direction change within 2 seconds of the last
-  // turn is blocked. Forces the unit to commit to its current heading long
-  // enough to actually complete the maneuver, preventing the "missed turn
-  // can't go back, A* now says go back, but as I turn around A* says no go
-  // forward again" oscillation cycle.
-  var nb = roadGraph.nodes[nextNode];
-  if (nb && this.bearing != null) {
-    var nextBearing = bearingDeg(this.lat, this.lon, nb.lat, nb.lon);
-    var delta = Math.abs(((nextBearing - this.bearing) + 540) % 360 - 180);
-    if (delta > 120 && (Date.now() - (this.lastTurnTime || 0)) < 2000) {
-      return this.currentNode;  // hold the line — cooldown active
-    }
-    if (delta > 60) {
-      this.lastTurnTime = Date.now();  // record real turn for next cooldown
-    }
-  }
-  return nextNode;
+  return this._pursuitPath[idx + 1];
 };
 
 // ── BAD GUY ATTRIBUTE PANEL ───────────────────────────────────────────────────
@@ -3173,16 +3277,14 @@ var INCIDENT_TYPES = [
     template:"There's a {color} car parked near {address} that's been there a while with someone inside. Looks suspicious." },
   { id:'bike_snatch', label:'Bike snatcher',                objType:'bike',   weight:2,
     template:"A guy on a {color} bicycle just grabbed a purse and took off heading {direction} near {address}. Wearing a dark hoodie." },
-  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2, apparel:'shirt',
+  { id:'foot_robber', label:'Robbery suspect on foot',      objType:'person', weight:2,
     template:"Someone in a {color} shirt just robbed a passerby and is running {direction} on {street}. Please hurry." },
-  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still', apparel:'clothing',
-    template:"There's a group of maybe three kids causing a disturbance on {street}. Wearing mostly {color}. They're being loud and harassing people." },
-  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still', apparel:'shirt',
-    template:"There's a person in a {color} shirt down on the ground near {street}. They're not moving much. I think they need help." },
-  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still', apparel:'jacket',
-    template:"I just heard three or four gunshots from somewhere near {street}. I see someone in a {color} jacket but they're not moving — I think they're hurt." },
-  { id:'lpr_bolo',    label:'Vehicle BOLO',                  objType:'car',    weight:2,
-    template:"911 — I just witnessed a robbery! The suspects fled in a {color} sedan, license plate {plate}, heading {direction} on {address}." }
+  { id:'youth_group', label:'Group of youths',              objType:'person', weight:2, subkind:'group', motion:'still',
+    template:"There's a group of maybe three kids causing a disturbance near {landmark}. Wearing mostly {color}. They're being loud and harassing people." },
+  { id:'distress',    label:'Person in distress',           objType:'person', weight:2, motion:'still',
+    template:"There's a person in a {color} shirt down on the ground near {landmark}. They're not moving much. I think they need help." },
+  { id:'shots_fired', label:'Shots fired',                  objType:'person', weight:1, subkind:'gunshot', motion:'still',
+    template:"I just heard three or four gunshots from somewhere near {landmark}. I see someone in a {color} jacket but they're not moving — I think they're hurt." }
 ];
 
 var CAR_COLORS   = [['white',25],['black',22],['gray',18],['silver',12],['red',9],['blue',8],['green',3],['gold',3]];
@@ -3234,16 +3336,6 @@ function _ic_pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
 
 var APPAREL_ITEMS = ['shirt','jacket','hoodie','sweatshirt','vest','jersey','coat'];
 function _ic_pickApparel() { return _ic_pick(APPAREL_ITEMS); }
-
-// 6-character license plate, 3 letters + 3 digits with a space (e.g. "XYZ 123").
-// Ambiguous glyphs (I/O/Q) skipped so the plate reads cleanly in alerts.
-function _ic_pickPlate() {
-  var L = 'ABCDEFGHJKLMNPRSTUVWXYZ', D = '0123456789', s = '';
-  for (var i = 0; i < 3; i++) s += L[Math.floor(Math.random() * L.length)];
-  s += ' ';
-  for (var j = 0; j < 3; j++) s += D[Math.floor(Math.random() * D.length)];
-  return s;
-}
 
 function _ic_colorFor(objType) {
   if (objType === 'car')  return _ic_wpick(CAR_COLORS);
@@ -3312,6 +3404,42 @@ function answer911Call() {
     return;
   }
   var incident = _ic_pickIncident();
+
+  // Phase 3: shots_fired uses the acoustic-triangulation path instead of the
+  // human-witness 911 call path. (Other incident types are unaffected and
+  // continue through the normal flow below.)
+  if (incident.id === 'shots_fired') {
+    if (TRI_ACTIVE) {
+      addAlert('warn', '🔇 Acoustic triangulation already in progress — try again in a moment.');
+      return;
+    }
+    var dup = badGuys.some(function(bg) {
+      return bg.active && bg.incidentMeta && bg.incidentMeta.subkind === 'gunshot';
+    });
+    if (dup) {
+      addAlert('warn', '🔇 Another gunshot incident is still active — only one at a time.');
+      return;
+    }
+    var origin = _ic_randomMapPoint();
+    if (roadNetworkReady) {
+      var snapped = snapToRoad(origin.lat, origin.lng, 'person');
+      origin.lat = snapped.lat; origin.lng = snapped.lon;
+    }
+    if (!canTriangulate(origin.lat, origin.lng)) {
+      var why;
+      if (!assetVisibility.mics)   why = 'mic mesh offline';
+      else if (!mics.length)        why = 'mic mesh still warming up';
+      else                          why = '<3 mics within ' + TRI_QUALITY_RADIUS + 'm of origin';
+      addAlert('warn', '🔇 Acoustic event detected but coverage insufficient — ' + why + '. No triangulation.');
+      return;
+    }
+    addAlert('warn', '🔊 <strong>Acoustic event detected</strong> — triangulating across mic mesh...');
+    runShotsFiredTriangulation(origin.lat, origin.lng, {
+      onComplete: function(lat, lon) { spawnAcousticSuspect(lat, lon); }
+    });
+    return;
+  }
+
   // Phase 4.1: pick the spawn point FIRST, then look up its actual street name
   // from the road graph so the call's address references the real spawn location.
   var pt = _ic_randomMapPoint();
@@ -3329,9 +3457,7 @@ function answer911Call() {
     address:   realStreet ? (addressNum + ' ' + realStreet) : _ic_randomAddress(),
     street:    realStreet || _ic_pick(BOSTON_STREETS),
     // Landmark must reflect the actual spawn location, not a random pick
-    landmark:  _ic_nearestLandmark(pt.lat, pt.lng),
-    // License plate — only car incidents that mention {plate} actually use it
-    plate:     _ic_pickPlate()
+    landmark:  _ic_nearestLandmark(pt.lat, pt.lng)
   };
   var callText = _ic_fill(incident.template, tokens);
 
@@ -3346,13 +3472,7 @@ function answer911Call() {
       id:       incident.id,
       label:    incident.label,
       color:    tokens.color,
-      // Apparel must match the 911 call template's specific noun so the
-      // dispatch alert and drone "visual on" alert all say the same word
-      // (shirt vs jacket vs clothing).
-      apparel:  (incident.objType === 'person') ? (incident.apparel || 'clothing') : null,
-      // Only attach plate if the call template actually mentioned one — so
-      // non-LPR car incidents don't claim a plate they never reported.
-      plate:    (incident.template.indexOf('{plate}') >= 0) ? tokens.plate : null,
+      apparel:  (incident.objType === 'person') ? _ic_pickApparel() : null,
       subkind:  incident.subkind || null,
       motion:   incident.motion  || 'moving',
       callText: callText
@@ -3372,25 +3492,20 @@ function answer911Call() {
   _ic_display(incident, callText, tokens);
   _ic_speak(callText);
   // Phase 4.2: dispatch alert mirrors the 911 call's metadata exactly so the
-  // operator sees: incident category, suspect descriptor (color + object/apparel),
-  // location string actually used in the call, and direction if applicable.
-  // renderTaskings card and detector "visual" alerts also reference
-  // incidentMeta.color + apparel — all three feeds are now consistent.
+  // operator sees: incident category, color + object, location string actually
+  // used in the call. (renderTaskings card and detector "visual" alerts already
+  // reference incidentMeta.color, so all three are now consistent.)
   if (typeof badGuy !== 'undefined' && badGuy) {
-    var descriptor;
-    if (incident.objType === 'car') {
-      descriptor = tokens.color + ' car';
-      if (badGuy.incidentMeta.plate) descriptor += ' (plate ' + badGuy.incidentMeta.plate + ')';
-    } else if (incident.objType === 'bike') descriptor = tokens.color + ' bicycle';
-    else descriptor = 'person in ' + tokens.color + ' ' + (incident.apparel || 'clothing');
+    var objNoun = incident.objType === 'car'   ? 'car'
+                : incident.objType === 'bike'  ? 'bicycle'
+                : 'person';
     var locStr = (incident.template.indexOf('{address}')  >= 0) ? tokens.address
                : (incident.template.indexOf('{street}')   >= 0) ? ('on ' + tokens.street)
                : (incident.template.indexOf('{landmark}') >= 0) ? tokens.landmark
                : null;
-    var dirStr = (incident.template.indexOf('{direction}') >= 0) ? (' heading ' + tokens.direction) : '';
     addAlert('bad', '<strong>911 INCIDENT #' + badGuy.id + ' &mdash; ' + incident.label +
-      '</strong> &mdash; ' + descriptor +
-      (locStr ? ' near ' + locStr : '') + dirStr + '.');
+      '</strong>: ' + tokens.color + ' ' + objNoun +
+      (locStr ? ' near ' + locStr : '') + '.');
   }
   // Re-render taskings now that metadata is set (so card shows description)
   renderTaskings();
@@ -3400,6 +3515,8 @@ document.getElementById('btn-deploy').onclick = answer911Call;
 document.getElementById('btn-reset').onclick=function(){
   // Phase 2: clear all incidents, return all tasked units to patrol, stop movement
   clearAllIncidents();
+  // Phase 3: cancel any in-flight acoustic-triangulation viz (lines, crosshair, timers)
+  clearTriangulation();
   stopMovement();
   removeAllAgents();
   var _cd = document.getElementById('call-display');
