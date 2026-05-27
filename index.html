@@ -3586,11 +3586,11 @@ function inCameraFOV(cam, target) {
 // has the relevant sensor type toggled ON (assetVisibility key). This gates the thesis:
 // without sensors, only the patrolling units' own cams produce detections.
 function checkCameraDetection() {
-  if (!badGuys.length) return;
   cameras.forEach(function(cam) {
     // All cameras (traffic + surveillance) share one toggle now
     if (!assetVisibility['traffic-cams']) { cam._hasVisual = false; return; }
     cam._hasVisual = false;
+    if (!badGuys.length) return;
     badGuys.forEach(function(bg) {
       if (!bg.active) return;
       if (inCameraFOV(cam, bg)) {
@@ -4269,13 +4269,6 @@ function answer911Call() {
   if (incident.id === 'shots_fired') {
     if (TRI_ACTIVE) {
       addAlert('warn', '🔇 Acoustic triangulation already in progress — try again in a moment.');
-      return;
-    }
-    var dup = badGuys.some(function(bg) {
-      return bg.active && bg.incidentMeta && bg.incidentMeta.subkind === 'gunshot';
-    });
-    if (dup) {
-      addAlert('warn', '🔇 Another gunshot incident is still active — only one at a time.');
       return;
     }
     // Pick a candidate origin that resolves to a real street address — same
