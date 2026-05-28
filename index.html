@@ -379,9 +379,9 @@ body{display:flex;flex-direction:column;}
 .rpanel-inner{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
 .rpanel-handle{display:none;}
 
-/* Phase 5: mobile resizable sections. On desktop the section wrappers are
-   layout-transparent (display:contents) so #right-panel renders exactly as
-   before, and the dividers are hidden. The mobile block below activates them. */
+/* Resizable Alert Feed vs Active Incidents (mobile). On desktop these wrappers
+   are layout-transparent (display:contents) so #right-panel renders exactly as
+   before, and the divider is hidden. The mobile block below activates them. */
 .rp-sec{display:contents;}
 .rp-divider{display:none;}
 
@@ -405,51 +405,67 @@ body{display:flex;flex-direction:column;}
    MapLibre native pinch-zoom works on touch automatically.
    ============================================================ */
 @media (max-width:768px){
-  /* Stack the main flex row into a column */
-  #main{flex-direction:column;}
+  /* ── MOBILE = VERTICALLY SCROLLING PAGE ───────────────────────────────────
+     Instead of locking everything to the viewport, the mobile view scrolls.
+     The map gets a tall fixed height (85vh) so it dominates when you reach it;
+     the topbar is pinned so the top is always one tap away. Stack order:
+     Scenario Control -> Map (hero) -> Alert Feed + Active Incidents.
+     MapLibre captures touch for pan/zoom, so you scroll the PAGE by dragging
+     on a non-map strip — and because the map is 85vh (not full height) a panel
+     edge always peeks above/below it, so you're never trapped on the map.
+     Desktop (>768px) never reads this block, so its layout is unchanged. */
 
-  /* Compact topbar — tighter padding/gap; hide long sub-title */
-  #topbar{padding:0 10px;gap:8px;}
+  /* Allow the document to scroll vertically (overrides the global overflow:hidden) */
+  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto;}
+
+  /* Column that grows with its content rather than filling the viewport */
+  #main{flex-direction:column;flex:0 0 auto;height:auto;min-height:0;overflow:visible;}
+
+  /* Pin the topbar while scrolling so the top is always reachable */
+  #topbar{position:sticky;top:0;z-index:50;padding:0 10px;gap:8px;}
   .title-text{font-size:10px;letter-spacing:.04em;}
   .ttsim{display:none;}
 
-  /* Visual order (modular — flip integers to swap layout) */
+  /* Visual order (flip these integers to rearrange the stack) */
   #left-panel {order:1;}
-  #right-panel{order:2;}
-  #mwrap      {order:3;}
+  #mwrap      {order:2;}
+  #right-panel{order:3;}
 
-  /* Left panel — controls, full-width band, height-capped */
+  /* Scenario Control — flows at natural height; every control is reachable by
+     page-scroll (no height cap, no inner scrollbar) */
   #left-panel{
     width:100%;min-width:0;
     flex:0 0 auto;
-    max-height:28vh;
-    overflow-y:auto;
+    height:auto;max-height:none;overflow:visible;
     border-right:none;
     border-bottom:1px solid var(--brd);
   }
 
-  /* Right panel — two independently-resizable sections (alert feed, active
-     incidents) stacked in a column, joined by an UPPER divider, plus a LOWER
-     divider at the panel's bottom edge that resizes the whole panel against
-     the map. CSS resize:vertical doesn't work on touch, so JS-driven drag
-     handles (added at script end) take over. Panel starts at 40vh; each
-     section has a min-height floor so it collapses to a strip but never
-     disappears, and the map keeps a 200px floor so it stays reachable. */
+  /* Map — tall hero region. 85vh (not 100%) guarantees a panel edge always
+     peeks above or below it, so a non-map area is always grabbable to scroll. */
+  #mwrap{
+    width:100%;
+    flex:0 0 auto;
+    height:85vh;min-height:85vh;
+    border-bottom:1px solid var(--brd);
+  }
+
+  /* Right panel — Alert Feed + Active Incidents as two resizable sections.
+     Occupies a fixed slice of the scrolling page (50vh); the divider between
+     the two sections lets you trade height between them, and each body scrolls
+     internally. (The map is sized by scroll, not by a panel-vs-map divider.) */
   #right-panel{
     width:100%;min-width:0;
     flex:0 0 auto;
-    height:40vh;
+    height:50vh;
     overflow:hidden;
-    position:relative;
     display:flex;flex-direction:column;
     border-left:none;
     border-bottom:1px solid var(--brd);
   }
-  /* Each section: fixed .ph header + scrollable body (#alert-feed /
-     #taskings-panel already scroll via flex:1 1 0 + overflow-y:auto).
-     Both start as an even flex split; the upper divider switches the alert
-     section to an explicit pixel height, leaving the active section to fill
-     the remaining panel height. */
+  /* Each section: fixed .ph header + scrollable body. Start as an even split;
+     dragging the divider switches the alert section to an explicit height and
+     the active section fills the rest. */
   .rp-sec{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1 1 0;}
   .rp-divider{
     display:block;flex:0 0 auto;height:18px;background:var(--sur);
@@ -462,9 +478,6 @@ body{display:flex;flex-direction:column;}
     background:var(--brd);border-radius:2px;
   }
   .rp-divider:active::before{background:var(--acc);}
-
-  /* Map — fills remaining vertical space; ~45vh hero region */
-  #mwrap{flex:1 1 auto;min-height:0;}
 
   /* Left-panel compaction:
      - Hide "Operations" and "911 Dispatch" section labels (keep
@@ -4581,147 +4594,66 @@ document.getElementById('btn-reset').onclick=function(){
   }, 400);
 };
 
-// ── Mobile panel resize: two independent dividers (Phase 5) ──────────────────
-// Mobile only. Splits the right panel into two independently-resizable
-// sections — alert feed and active incidents — joined by an UPPER divider,
-// with a LOWER divider at the panel's bottom edge (the map's top edge) that
-// resizes the whole panel against the map. Each section keeps a min-height
-// floor so it collapses to a strip but never disappears; the map keeps a
-// min height so it can't be pushed fully off-screen. Pointer events cover
-// both mouse and touch. Desktop ignores all of this: .rp-sec is
-// display:contents and the dividers are display:none, so #right-panel renders
-// exactly as before.
-(function setupMobilePanelResize(){
+// ── Mobile: resizable Alert Feed vs Active Incidents + map resize ───────────
+// On mobile the page scrolls vertically and the map is a tall 85vh hero (see
+// the mobile CSS block). Inside the right panel, Alert Feed and Active
+// Incidents become two sections split by a draggable divider so their heights
+// can be traded; each body scrolls internally and each keeps a min-height
+// floor. Desktop ignores all of it (.rp-sec is display:contents, the divider
+// is display:none). The map is also kept correctly sized on rotation.
+(function setupMobilePanels(){
   var panel = document.getElementById('right-panel');
   var feed  = document.getElementById('alert-feed');
   var tasks = document.getElementById('taskings-panel');
-  if (!panel || !feed || !tasks) return;
+  if (panel && feed && tasks) {
+    var feedHdr = feed.previousElementSibling;    // "Alert Feed" header (.ph)
+    var taskHdr = tasks.previousElementSibling;   // "Active Incidents" header (.ph)
+    var alertSec = document.createElement('div'); alertSec.className = 'rp-sec rp-alert';
+    var activeSec = document.createElement('div'); activeSec.className = 'rp-sec rp-active';
+    var divider = document.createElement('div');
+    divider.className = 'rp-divider';
+    divider.setAttribute('role', 'separator');
+    divider.setAttribute('aria-label', 'Drag to resize alert feed vs active incidents');
+    if (feedHdr) alertSec.appendChild(feedHdr);
+    alertSec.appendChild(feed);
+    if (taskHdr) activeSec.appendChild(taskHdr);
+    activeSec.appendChild(tasks);
+    panel.appendChild(alertSec);
+    panel.appendChild(divider);
+    panel.appendChild(activeSec);
 
-  var feedHdr = feed.previousElementSibling;   // "Alert Feed" header (.ph)
-  var taskHdr = tasks.previousElementSibling;   // "Active Incidents" header (.ph)
-
-  // Wrap [header + body] into two resizable sections.
-  var alertSec = document.createElement('div');
-  alertSec.className = 'rp-sec rp-alert';
-  var activeSec = document.createElement('div');
-  activeSec.className = 'rp-sec rp-active';
-
-  function makeDivider(cls, label){
-    var d = document.createElement('div');
-    d.className = 'rp-divider ' + cls;
-    d.setAttribute('role', 'separator');
-    d.setAttribute('aria-label', label);
-    return d;
-  }
-  var divTop = makeDivider('rp-div-top', 'Drag to resize alert feed vs active incidents');
-  var divBot = makeDivider('rp-div-bot', 'Drag to resize panels vs map');
-
-  // Reassemble panel in order: alertSec, divTop, activeSec, divBot.
-  if (feedHdr) alertSec.appendChild(feedHdr);
-  alertSec.appendChild(feed);
-  if (taskHdr) activeSec.appendChild(taskHdr);
-  activeSec.appendChild(tasks);
-  panel.appendChild(alertSec);
-  panel.appendChild(divTop);
-  panel.appendChild(activeSec);
-  panel.appendChild(divBot);
-
-  var HANDLE = 18, ALERT_MIN = 70, ACTIVE_MIN = 70, MAP_MIN = 200;
-  function isMobile(){ return window.matchMedia('(max-width: 768px)').matches; }
-  function mainEl(){ return document.getElementById('main'); }
-  function leftEl(){ return document.getElementById('left-panel'); }
-
-  function panelMinH(){ return ALERT_MIN + ACTIVE_MIN + 2 * HANDLE; }
-  function panelMaxH(){
-    // Leave the map at least MAP_MIN within the space below the left panel.
-    var avail = mainEl().clientHeight - leftEl().offsetHeight;
-    return Math.max(panelMinH(), avail - MAP_MIN);
-  }
-  function refreshMap(){
-    if (typeof map !== 'undefined' && map && map.resize) {
-      try { map.resize(); } catch(_){}
+    var HANDLE = 18, ALERT_MIN = 70, ACTIVE_MIN = 70;
+    function isMobile(){ return window.matchMedia('(max-width: 768px)').matches; }
+    var dragging = false, startY = 0, startAlertH = 0;
+    divider.addEventListener('pointerdown', function(e){
+      if (!isMobile()) return;
+      dragging = true; startY = e.clientY;
+      startAlertH = alertSec.getBoundingClientRect().height;
+      alertSec.style.flex = '0 0 auto';   // switch from even-split to explicit px
+      try { divider.setPointerCapture(e.pointerId); } catch(_){}
+      e.preventDefault();
+    });
+    divider.addEventListener('pointermove', function(e){
+      if (!dragging) return;
+      var innerAvail = panel.clientHeight - HANDLE;
+      var h = startAlertH + (e.clientY - startY);
+      h = Math.max(ALERT_MIN, Math.min(h, innerAvail - ACTIVE_MIN));
+      alertSec.style.height = h + 'px';
+      e.preventDefault();
+    });
+    function endDrag(e){
+      if (!dragging) return;
+      dragging = false;
+      try { divider.releasePointerCapture(e.pointerId); } catch(_){}
     }
-  }
-  // Keep the alert section's explicit height valid for the current panel height
-  // (called after the lower divider changes the panel height).
-  function clampAlert(){
-    if (!alertSec.style.height) return;            // still in even-split mode
-    var innerAvail = panel.clientHeight - 2 * HANDLE;
-    var h = parseFloat(alertSec.style.height);
-    h = Math.max(ALERT_MIN, Math.min(h, innerAvail - ACTIVE_MIN));
-    alertSec.style.height = h + 'px';
+    divider.addEventListener('pointerup', endDrag);
+    divider.addEventListener('pointercancel', endDrag);
   }
 
-  // ── UPPER divider: alert vs active (total panel height unchanged) ─────────
-  var dragT = false, startYT = 0, startAlertH = 0;
-  divTop.addEventListener('pointerdown', function(e){
-    if (!isMobile()) return;
-    dragT = true; startYT = e.clientY;
-    startAlertH = alertSec.getBoundingClientRect().height;
-    alertSec.style.flex = '0 0 auto';   // switch from even-split to explicit px
-    try { divTop.setPointerCapture(e.pointerId); } catch(_){}
-    e.preventDefault();
-  });
-  divTop.addEventListener('pointermove', function(e){
-    if (!dragT) return;
-    var innerAvail = panel.clientHeight - 2 * HANDLE;
-    var h = startAlertH + (e.clientY - startYT);
-    h = Math.max(ALERT_MIN, Math.min(h, innerAvail - ACTIVE_MIN));
-    alertSec.style.height = h + 'px';
-    e.preventDefault();
-  });
-
-  // ── LOWER divider: whole panel vs map ─────────────────────────────────────
-  var dragB = false, startYB = 0, startPanelH = 0;
-  divBot.addEventListener('pointerdown', function(e){
-    if (!isMobile()) return;
-    dragB = true; startYB = e.clientY;
-    startPanelH = panel.getBoundingClientRect().height;
-    try { divBot.setPointerCapture(e.pointerId); } catch(_){}
-    e.preventDefault();
-  });
-  divBot.addEventListener('pointermove', function(e){
-    if (!dragB) return;
-    var h = startPanelH + (e.clientY - startYB);
-    h = Math.max(panelMinH(), Math.min(h, panelMaxH()));
-    panel.style.height = h + 'px';
-    clampAlert();
-    e.preventDefault();
-  });
-
-  function endDrag(e){
-    if (!dragT && !dragB) return;
-    dragT = false; dragB = false;
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch(_){}
-    refreshMap();
-  }
-  [divTop, divBot].forEach(function(d){
-    d.addEventListener('pointerup', endDrag);
-    d.addEventListener('pointercancel', endDrag);
-  });
-
-  // Re-clamp on rotation / viewport change so the map keeps its min height.
-  window.addEventListener('resize', function(){
-    if (!isMobile()) return;
-    if (panel.style.height) {
-      var h = Math.max(panelMinH(), Math.min(parseFloat(panel.style.height), panelMaxH()));
-      panel.style.height = h + 'px';
-    }
-    clampAlert();
-    refreshMap();
-  });
-
-  // Initial clamp (mobile only) so the map starts at >= its min height even on
-  // short viewports. Desktop never sets an inline height, so its layout is
-  // left untouched. Runs once after layout settles.
-  function initClamp(){
-    if (!isMobile()) return;
-    var rendered = panel.getBoundingClientRect().height;
-    panel.style.height = Math.max(panelMinH(), Math.min(rendered, panelMaxH())) + 'px';
-    refreshMap();
-  }
-  if (document.readyState === 'complete') setTimeout(initClamp, 50);
-  else window.addEventListener('load', function(){ setTimeout(initClamp, 50); });
+  // Keep the map canvas correctly sized on rotation / viewport change.
+  function refresh(){ if (typeof map !== 'undefined' && map && map.resize) { try { map.resize(); } catch(_){} } }
+  window.addEventListener('resize', refresh);
+  window.addEventListener('orientationchange', function(){ setTimeout(refresh, 200); });
 })();
 </script>
 </body>
