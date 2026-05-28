@@ -371,6 +371,131 @@ body{display:flex;flex-direction:column;}
 .ai.bad{background:linear-gradient(90deg,rgba(239,68,68,.15) 0%,var(--sur2) 60%);}
 .ai.ok {background:linear-gradient(90deg,rgba(34,197,94,.15)  0%,var(--sur2) 60%);}
 .ai.warn{background:linear-gradient(90deg,rgba(245,158,11,.12) 0%,var(--sur2) 60%);}
+
+/* Right-panel wrapper helpers — defaults that apply on desktop too.
+   On desktop, .rpanel-inner is layout-transparent (just a flex pass-through)
+   so existing alert-feed / incidents layout is unchanged. .rpanel-handle is
+   hidden. Both are activated by mobile rules below. */
+.rpanel-inner{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;}
+.rpanel-handle{display:none;}
+
+/* ============================================================
+   MOBILE LAYOUT (≤768px). Desktop is BYTE-FOR-BYTE UNTOUCHED:
+   browsers wider than 768px never read this block.
+
+   Stack panels and map vertically. Map is the hero, anchored
+   at the bottom; controls and alert feed live above it.
+
+     [ #topbar — compact ]
+     [ #left-panel  — controls,    order:1, max 28vh, scrolls ]
+     [ #right-panel — alert feed,  order:2, max 24vh, scrolls ]
+     [ #mwrap/map   — hero,        order:3, flex:1 fills rest ]
+
+   ── TO SWAP MAP TO TOP LATER ──
+   Change just the three `order:` values below to e.g.
+   #mwrap → order:1   #left-panel → order:2   #right-panel → order:3
+   DOM never changes; pure CSS reorder.
+
+   MapLibre native pinch-zoom works on touch automatically.
+   ============================================================ */
+@media (max-width:768px){
+  /* Stack the main flex row into a column */
+  #main{flex-direction:column;}
+
+  /* Compact topbar — tighter padding/gap; hide long sub-title */
+  #topbar{padding:0 10px;gap:8px;}
+  .title-text{font-size:10px;letter-spacing:.04em;}
+  .ttsim{display:none;}
+
+  /* Visual order (modular — flip integers to swap layout) */
+  #left-panel {order:1;}
+  #right-panel{order:2;}
+  #mwrap      {order:3;}
+
+  /* Left panel — controls, full-width band, height-capped */
+  #left-panel{
+    width:100%;min-width:0;
+    flex:0 0 auto;
+    max-height:28vh;
+    overflow-y:auto;
+    border-right:none;
+    border-bottom:1px solid var(--brd);
+  }
+
+  /* Right panel — alert feed + active incidents.
+     CSS resize:vertical doesn't work on touch, so a JS-driven drag handle
+     (added at script end) takes over. Panel starts at 30vh; user can drag
+     the handle down to expand (even pushing the map off-screen),
+     or up to compact back down. */
+  #right-panel{
+    width:100%;min-width:0;
+    flex:0 0 auto;
+    height:30vh;
+    overflow:hidden;          /* inner wrapper scrolls instead */
+    position:relative;
+    border-left:none;
+    border-bottom:1px solid var(--brd);
+  }
+  /* Scrollable inner wrapper (JS wraps the original panel content into this) */
+  .rpanel-inner{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+  }
+  /* Visible drag handle at bottom of panel */
+  .rpanel-handle{
+    flex:0 0 auto;
+    display:block;
+    height:18px;
+    background:var(--sur);
+    border-top:1px solid var(--brd);
+    cursor:ns-resize;
+    touch-action:none;
+    user-select:none;
+    position:relative;
+  }
+  .rpanel-handle::before{
+    content:'';position:absolute;
+    left:50%;top:50%;
+    transform:translate(-50%,-50%);
+    width:44px;height:4px;
+    background:var(--brd);border-radius:2px;
+  }
+  .rpanel-handle:active::before{background:var(--acc);}
+
+  /* Map — fills remaining vertical space; ~45vh hero region */
+  #mwrap{flex:1 1 auto;min-height:0;}
+
+  /* Left-panel compaction:
+     - Hide "Operations" and "911 Dispatch" section labels (keep
+       "Deployed / Assets Available" since it labels the badges).
+     - Shrink Answer 911 Call button to minimal height.
+     - Tighten section padding so hidden labels leave no ghost gaps. */
+  #left-panel > div:nth-of-type(2) > .psl,
+  #left-panel > div:nth-of-type(3) > .psl{display:none;}
+  #left-panel .ph{padding:6px 12px;}
+  #left-panel .ps{padding:8px 12px;}
+  .bd{padding:5px 10px;}
+  .bd .bd-icon{font-size:13px;}
+  .bd .bd-text{font-size:12px;letter-spacing:.05em;}
+
+  /* Shorter Reset button + any other .btn in the left panel */
+  #left-panel .btn{padding:5px 10px;font-size:11px;margin-bottom:4px;}
+
+  /* Tighter section padding (less empty space above/below buttons) */
+  #left-panel .ph{padding:4px 12px;}
+  #left-panel .ps{padding:6px 10px;}
+
+  /* Asset badges: 3 wide instead of 2; tighter padding + smaller labels.
+     Frees a row of vertical space for the alert feed below. */
+  .agrid{grid-template-columns:repeat(3, 1fr);gap:4px;}
+  .abadge{padding:5px 6px;gap:5px;}
+  .abn{font-size:9px;}
+  .abc{font-size:13px;}
+  .agrid-hint{margin:-2px 0 4px;font-size:8px;}
+}
 </style>
 </head>
 <body>
@@ -1431,7 +1556,7 @@ async function fetchOverpass(mirrorIdx) {
   var query = '[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|trunk|motorway|primary_link|secondary_link|tertiary_link|trunk_link|footway|path|pedestrian|cycleway|track|service)$"]('+BBOX+'););out body;>;out skel qt;';
   try {
     var controller = new AbortController();
-    var timer = setTimeout(function(){ controller.abort(); }, 20000);
+    var timer = setTimeout(function(){ controller.abort(); }, 30000);
     var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
       method:'POST', body:'data='+encodeURIComponent(query),
       signal: controller.signal
@@ -1468,7 +1593,7 @@ async function fetchTrafficSignals(mirrorIdx) {
   var query = '[out:json][timeout:25];node["highway"="traffic_signals"]('+BBOX+');out body;';
   try {
     var controller = new AbortController();
-    var timer = setTimeout(function(){ controller.abort(); }, 20000);
+    var timer = setTimeout(function(){ controller.abort(); }, 30000);
     var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
       method:'POST', body:'data='+encodeURIComponent(query),
       signal: controller.signal
@@ -1509,7 +1634,7 @@ async function fetchSurveillanceCameras(mirrorIdx) {
     ');out body;';
   try {
     var controller = new AbortController();
-    var timer = setTimeout(function(){ controller.abort(); }, 20000);
+    var timer = setTimeout(function(){ controller.abort(); }, 30000);
     var r = await fetch(OVERPASS_MIRRORS[mirrorIdx], {
       method:'POST', body:'data='+encodeURIComponent(query),
       signal: controller.signal
@@ -2678,6 +2803,14 @@ function autoStart() {
   doPlaceAgents();
   updateAssetCounts();  // Phase 2: dynamic counters reflect tasked state
   startMovement();
+  // Dispatcher voice prompts the operator that the system is ready.
+  // 900ms delay lets the just-placed agents settle visually on the map first.
+  // Also serves as the "first speak" — warms up the speech engine on iOS
+  // (where the very first speechSynthesis.speak() after page load can be
+  // silently dropped) so the actual 911 call audio plays reliably.
+  setTimeout(function() {
+    _ic_systemSpeak('Boston Common Security Operations Center online. Press Answer 911 Call to begin.');
+  }, 900);
   // Place mics after a delay so async Overpass camera fetches have time to land
   // — collision avoidance needs to see camera positions to push mics away from them
   setTimeout(function() {
@@ -4449,6 +4582,54 @@ document.getElementById('btn-reset').onclick=function(){
     if (roadNetworkReady) { autoStart(); }
   }, 400);
 };
+
+// ── Mobile right-panel drag-to-resize ───────────────────────────────────────
+// CSS resize:vertical doesn't work via touch. This wraps the panel's existing
+// children into a scrollable inner div and appends a visible drag handle.
+// Pointer events (mouse + touch) let the user pull the alert feed taller —
+// even off-screen down past the map — or compact it back. Desktop ignores
+// this entirely (handle is display:none; CSS .rpanel-inner is a transparent
+// flex pass-through so existing layout is unchanged).
+(function setupRightPanelDrag(){
+  var panel = document.getElementById('right-panel');
+  if (!panel) return;
+  var inner = document.createElement('div');
+  inner.className = 'rpanel-inner';
+  while (panel.firstChild) inner.appendChild(panel.firstChild);
+  panel.appendChild(inner);
+  var handle = document.createElement('div');
+  handle.className = 'rpanel-handle';
+  handle.setAttribute('aria-label', 'Drag to resize alert feed');
+  handle.setAttribute('role', 'separator');
+  panel.appendChild(handle);
+
+  var dragging = false, startY = 0, startH = 0;
+  function isMobile(){ return window.matchMedia('(max-width: 768px)').matches; }
+
+  handle.addEventListener('pointerdown', function(e){
+    if (!isMobile()) return;
+    dragging = true;
+    startY = e.clientY;
+    startH = panel.getBoundingClientRect().height;
+    try { handle.setPointerCapture(e.pointerId); } catch(_){}
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    var newH = startH + (e.clientY - startY);
+    var minH = window.innerHeight * 0.16;
+    var maxH = window.innerHeight * 0.92;   // ~off-screen; map still reachable via topbar
+    panel.style.height = Math.max(minH, Math.min(maxH, newH)) + 'px';
+    e.preventDefault();
+  });
+  function endDrag(e){
+    if (!dragging) return;
+    dragging = false;
+    try { handle.releasePointerCapture(e.pointerId); } catch(_){}
+  }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+})();
 </script>
 </body>
 </html>
