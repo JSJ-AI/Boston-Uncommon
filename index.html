@@ -4463,8 +4463,8 @@ function _ic_playAttentionTone(onDone) {
     var d1 = 0.40, gap = 0.05, d2 = 0.55, pairGap = 0.14;
     var pair = d1 + gap + d2;
     [0, pair + pairGap].forEach(function(off) {          // play the A->B pair twice
-      tone(525, t + off, d1);
-      tone(690, t + off + d1 + gap, d2);
+      tone(420, t + off, d1);
+      tone(552, t + off + d1 + gap, d2);
     });
     var total = pair + pairGap + pair;
     if (onDone) setTimeout(onDone, total * 1000 + 220);
@@ -4479,7 +4479,7 @@ function _ic_playIntro() {
   function female() {                              // the urgent 911 closer
     if (spokeFemale) return; spokeFemale = true;
     _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
-      "911, what's your emergency?", null, { rate: 1.28, pitch: 1.35 });   // higher = feminine/urgent
+      "911, what's your emergency?", null, { rate: 1.5, pitch: 1.4 });   // faster + higher = urgent
   }
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
