@@ -4432,11 +4432,11 @@ function _ic_getCtx() {
   } catch(e) { /* swallow */ }
   return _ic_audioCtx;
 }
-// Two quick radio-style tones (ascending) as a dispatch "attention" alert.
+// Two quick radio-style tones (ascending), one octave lower, repeated twice
+// (4 tones total) as a dispatch "attention" alert.
 function _ic_playAttentionTone(onDone) {
   var ctx = _ic_getCtx();
   if (!ctx) { if (onDone) onDone(); return; }
-  var t = ctx.currentTime;
   function tone(freq, start, dur) {
     var osc = ctx.createOscillator(), g = ctx.createGain();
     osc.type = 'square';
@@ -4448,10 +4448,15 @@ function _ic_playAttentionTone(onDone) {
     osc.connect(g); g.connect(ctx.destination);
     osc.start(start); osc.stop(start + dur + 0.02);
   }
-  var d1 = 0.40, gap = 0.05, d2 = 0.55;
-  tone(1050, t, d1);
-  tone(1380, t + d1 + gap, d2);
-  if (onDone) setTimeout(onDone, (d1 + gap + d2) * 1000 + 140);
+  var t = ctx.currentTime;
+  var d1 = 0.40, gap = 0.05, d2 = 0.55, pairGap = 0.14;
+  var pair = d1 + gap + d2;
+  [0, pair + pairGap].forEach(function(off) {          // play the A->B pair twice
+    tone(525, t + off, d1);
+    tone(690, t + off + d1 + gap, d2);
+  });
+  var total = pair + pairGap + pair;
+  if (onDone) setTimeout(onDone, total * 1000 + 160);
 }
 
 function _ic_playIntro() {
@@ -4464,8 +4469,8 @@ function _ic_playIntro() {
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
       'Boston Common Security Operations Center online. Press Answer 911 Call to begin.',
-      function() { setTimeout(female, 600); });
-    setTimeout(female, 5200);                      // fallback if onend never fires (some iOS)
+      function() { setTimeout(female, 1000); });   // 1s gap after the male line ends
+    setTimeout(female, 8000);                      // safety net only if onend never fires
   }
   _ic_playAttentionTone(male);                     // tone -> male -> female
 }
