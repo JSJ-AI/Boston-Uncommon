@@ -624,7 +624,7 @@ var responseTimings = [];   // seconds, one per completed-arrival incident — f
 // Welcome modal handlers — auto-shows on every page load. Dismissed for the
 // current session via the Continue button, the close icon, or backdrop click.
 function showWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.add('show');}
-function hideWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.remove('show');}
+function hideWelcome(){var m=document.getElementById('welcome-modal');if(m)m.classList.remove('show');try{_ic_primeAudio();}catch(e){}}
 
 // ── MAP INIT inside window.load — guarantees DOM + external CSS fully resolved ──
 window.addEventListener('load', function() {
@@ -2824,13 +2824,14 @@ function autoStart() {
   doPlaceAgents();
   updateAssetCounts();  // Phase 2: dynamic counters reflect tasked state
   startMovement();
-  // Dispatcher voice prompts the operator that the system is ready.
-  // 900ms delay lets the just-placed agents settle visually on the map first.
-  // Also serves as the "first speak" — warms up the speech engine on iOS
-  // (where the very first speechSynthesis.speak() after page load can be
-  // silently dropped) so the actual 911 call audio plays reliably.
+  // Dispatcher voice prompts the operator that the system is ready, as a one-time
+  // two-voice 911 vignette. It must be gesture-unlocked: if the user has already
+  // dismissed the welcome modal (a tap) it plays now; otherwise it waits and
+  // fires on that first tap. 900ms lets the just-placed agents settle first.
+  _ic_introPlayed = false;   // re-arm for this scenario start (also covers Reset)
   setTimeout(function() {
-    _ic_systemSpeak('Boston Common Security Operations Center online. Press Answer 911 Call to begin.');
+    if (_ic_audioReady) _ic_maybePlayIntro();
+    else _ic_introPending = true;
   }, 900);
   // Place mics after a delay so async Overpass camera fetches have time to land
   // — collision avoidance needs to see camera positions to push mics away from them
@@ -4297,7 +4298,7 @@ function _ic_pickIncident() {
 function _ic_speechPrep(text) {
   if (!text) return text;
   var s = String(text);
-  s = s.replace(/\b911\b/g, '9-1-1');
+  s = s.replace(/\b911\b/g, 'nine one one');
   s = s.replace(/\b([A-Z]{3})([0-9]{4})\b/g, function(m, letters, digits) {
     return letters.split('').join(' ') + ' ' + digits.split('').join(' ');
   });
@@ -4327,74 +4328,178 @@ function _ic_speak(text) {
 // Picks a SINGLE smooth English male voice once on page load and reuses it for
 // every system message. Voice loading is async in browsers, so we resolve on
 // the 'voiceschanged' event and also lazily on first call.
-var _ic_systemVoice = null;
-var _ic_systemVoicePreferences = [
-  // Edge neural voices — best quality, very natural
-  'Microsoft Davis Online', 'Microsoft Guy Online', 'Microsoft Tony Online',
-  'Microsoft Aaron Online',
-  // Chrome and Safari/macOS smooth male voices
-  'Google UK English Male', 'Google US English',
-  'Daniel',          // macOS UK English male (very smooth)
-  'Alex',            // macOS US English male
-  // Older but reliable Windows voices
-  'Microsoft George', 'Microsoft Mark', 'Microsoft David'
+var _ic_systemVoice = null;   // American male — system + acoustic dispatch
+var _ic_femaleVoice = null;   // American female — one-time 911 intake line
+
+// Web Speech doesn't expose gender, so we match by known voice names and bias
+// to American (en-US), with graceful fallback to any English voice. On sparse
+// devices the male and female picks can collapse to the same voice — accepted.
+var _ic_maleVoicePreferences = [
+  'Microsoft Guy Online', 'Microsoft Davis Online', 'Microsoft Andrew Online',
+  'Microsoft Aaron Online', 'Microsoft David',
+  'Aaron', 'Fred', 'Alex',          // macOS US English male
+  'Google US English',              // Chrome/Android US
+  'Microsoft Mark', 'Eric', 'Tom'
+];
+var _ic_femaleVoicePreferences = [
+  'Microsoft Aria Online', 'Microsoft Jenny Online', 'Microsoft Michelle Online',
+  'Microsoft Ana Online', 'Microsoft Zira',          // Windows US female
+  'Samantha', 'Allison', 'Ava', 'Susan', 'Nicky',    // macOS/iOS US female
+  'Google US English', 'Aria', 'Jenny'
 ];
 
-function _ic_pickSystemVoice() {
+function _ic_findVoiceByNames(prefs) {
   if (typeof window.speechSynthesis === 'undefined') return null;
   var voices = window.speechSynthesis.getVoices();
   if (!voices.length) return null;
-  // Try preferred names in order
-  for (var i = 0; i < _ic_systemVoicePreferences.length; i++) {
-    var pref = _ic_systemVoicePreferences[i].toLowerCase();
+  for (var i = 0; i < prefs.length; i++) {
+    var pref = prefs[i].toLowerCase(), loose = null;
     for (var j = 0; j < voices.length; j++) {
-      if (voices[j].name && voices[j].name.toLowerCase().indexOf(pref) >= 0) {
-        return voices[j];
+      var v = voices[j];
+      if (v.name && v.name.toLowerCase().indexOf(pref) >= 0) {
+        if (v.lang && v.lang.toLowerCase().indexOf('en-us') === 0) return v; // best: US match
+        if (!loose) loose = v;
       }
     }
-  }
-  // Fallback: any English voice with "male" in name (excluding "female")
-  for (var k = 0; k < voices.length; k++) {
-    var v = voices[k], n = (v.name || '').toLowerCase();
-    if (v.lang && v.lang.toLowerCase().indexOf('en') === 0
-        && n.indexOf('male') >= 0 && n.indexOf('female') < 0) {
-      return v;
-    }
-  }
-  // Last resort: any English voice (let the OS pick)
-  for (var l = 0; l < voices.length; l++) {
-    if (voices[l].lang && voices[l].lang.toLowerCase().indexOf('en') === 0) {
-      return voices[l];
-    }
+    if (loose) return loose;
   }
   return null;
 }
+function _ic_anyEnglishVoice() {
+  if (typeof window.speechSynthesis === 'undefined') return null;
+  var voices = window.speechSynthesis.getVoices(), i;
+  for (i = 0; i < voices.length; i++) { if (voices[i].lang && voices[i].lang.toLowerCase().indexOf('en-us') === 0) return voices[i]; }
+  for (i = 0; i < voices.length; i++) { if (voices[i].lang && voices[i].lang.toLowerCase().indexOf('en') === 0) return voices[i]; }
+  return voices.length ? voices[0] : null;
+}
+function _ic_pickSystemVoice() { return _ic_findVoiceByNames(_ic_maleVoicePreferences) || _ic_anyEnglishVoice(); }
+function _ic_pickFemaleVoice() {
+  var f = _ic_findVoiceByNames(_ic_femaleVoicePreferences);
+  if (f && (!_ic_systemVoice || f.name !== _ic_systemVoice.name)) return f;  // prefer distinct
+  return f || _ic_anyEnglishVoice();
+}
 
-// Initialize system voice when browser finishes loading voice list
+// Resolve voices now (may be empty) and again when the browser loads them async.
 if (typeof window.speechSynthesis !== 'undefined') {
-  // Try immediately (voices may already be loaded)
   _ic_systemVoice = _ic_pickSystemVoice();
-  // Re-resolve when voices finish loading async
+  _ic_femaleVoice = _ic_pickFemaleVoice();
   window.speechSynthesis.onvoiceschanged = function() {
     _ic_systemVoice = _ic_pickSystemVoice();
+    _ic_femaleVoice = _ic_pickFemaleVoice();
   };
 }
 
-function _ic_systemSpeak(text) {
+function _ic_speakWith(voice, text, onEnd, opts) {
   if (typeof window.speechSynthesis === 'undefined') return;
   try {
-    // Lazy-resolve voice if not yet cached (page may have loaded before voices
-    // were available; this catches the first user gesture after voices loaded).
-    if (!_ic_systemVoice) _ic_systemVoice = _ic_pickSystemVoice();
     window.speechSynthesis.cancel();
     var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
-    if (_ic_systemVoice) utt.voice = _ic_systemVoice;
-    utt.rate  = 1.0;   // steady dispatcher cadence — no random variation
-    utt.pitch = 1.0;
-    utt.volume = 1.0;
+    if (voice) utt.voice = voice;
+    opts = opts || {};
+    utt.rate   = opts.rate  || 1.0;
+    utt.pitch  = opts.pitch || 1.0;
+    utt.volume = (opts.volume == null) ? 1.0 : opts.volume;
+    if (onEnd) utt.onend = onEnd;
     window.speechSynthesis.speak(utt);
   } catch(e) { /* swallow */ }
 }
+
+function _ic_systemSpeak(text) {
+  if (!_ic_systemVoice) _ic_systemVoice = _ic_pickSystemVoice();
+  _ic_speakWith(_ic_systemVoice, text);
+}
+
+// ── One-time startup 911 vignette + audio unlock ────────────────────────────
+// Browsers gate speech behind a real user gesture, and the startup line is
+// triggered by an async road-load (not a tap), which is why it was unreliable.
+// We prime/warm speech on the first gesture (the welcome-modal Continue tap, or
+// any first tap) and only then play the intro: a two-voice mood-setter —
+// female "9-1-1, what's your emergency?", a beat, then the male system line.
+var _ic_audioReady   = false;
+var _ic_introPending = false;
+var _ic_introPlayed  = false;
+
+// Web Audio for the dispatch attention tone (original two-tone alert — NOT a
+// copy of any specific radio recording). Created/resumed on a user gesture.
+var _ic_audioCtx = null;
+function _ic_getCtx() {
+  try {
+    if (!_ic_audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) _ic_audioCtx = new AC();
+    }
+    if (_ic_audioCtx && _ic_audioCtx.state === 'suspended') _ic_audioCtx.resume();
+  } catch(e) { /* swallow */ }
+  return _ic_audioCtx;
+}
+// Two quick radio-style tones (ascending) as a dispatch "attention" alert.
+function _ic_playAttentionTone(onDone) {
+  var ctx = _ic_getCtx();
+  if (!ctx) { if (onDone) onDone(); return; }
+  var t = ctx.currentTime;
+  function tone(freq, start, dur) {
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.18, start + 0.012);   // quick attack (no click)
+    g.gain.setValueAtTime(0.18, start + dur - 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);    // quick release
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start(start); osc.stop(start + dur + 0.02);
+  }
+  var d1 = 0.40, gap = 0.05, d2 = 0.55;
+  tone(1050, t, d1);
+  tone(1380, t + d1 + gap, d2);
+  if (onDone) setTimeout(onDone, (d1 + gap + d2) * 1000 + 140);
+}
+
+function _ic_playIntro() {
+  var spokeFemale = false;
+  function female() {                              // the urgent 911 closer
+    if (spokeFemale) return; spokeFemale = true;
+    _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
+      "911, what's your emergency?", null, { rate: 1.28, pitch: 1.08 });
+  }
+  function male() {                                // steady system line first
+    _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
+      'Boston Common Security Operations Center online. Press Answer 911 Call to begin.',
+      function() { setTimeout(female, 600); });
+    setTimeout(female, 5200);                      // fallback if onend never fires (some iOS)
+  }
+  _ic_playAttentionTone(male);                     // tone -> male -> female
+}
+
+function _ic_maybePlayIntro() {
+  if (_ic_introPlayed) return;
+  _ic_introPlayed = true; _ic_introPending = false;
+  _ic_playIntro();
+}
+
+// First user gesture: unlock + warm the speech engine, resolve voices, and play
+// the intro if it was waiting on a gesture. Idempotent.
+function _ic_primeAudio() {
+  if (!_ic_audioReady) {
+    _ic_audioReady = true;
+    if (typeof window.speechSynthesis !== 'undefined') {
+      try {
+        window.speechSynthesis.resume();
+        var warm = new SpeechSynthesisUtterance(' ');
+        warm.volume = 0;                       // silent warm-up within the gesture
+        window.speechSynthesis.speak(warm);
+      } catch(e) { /* swallow */ }
+    }
+    _ic_systemVoice = _ic_systemVoice || _ic_pickSystemVoice();
+    _ic_femaleVoice = _ic_femaleVoice || _ic_pickFemaleVoice();
+    _ic_getCtx();   // unlock Web Audio (for the attention tone) within the gesture
+  }
+  if (_ic_introPending) setTimeout(_ic_maybePlayIntro, 250);
+}
+
+// Any first tap primes too (covers welcome dismissals that bypass the button).
+['pointerdown', 'touchstart', 'click'].forEach(function(ev) {
+  document.addEventListener(ev, _ic_primeAudio);
+});
 
 function _ic_display(incident, text, tokens) {
   var disp  = document.getElementById('call-display');
