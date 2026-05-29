@@ -4372,11 +4372,21 @@ function _ic_anyEnglishVoice() {
   for (i = 0; i < voices.length; i++) { if (voices[i].lang && voices[i].lang.toLowerCase().indexOf('en') === 0) return voices[i]; }
   return voices.length ? voices[0] : null;
 }
+function _ic_anyEnglishVoiceExcept(excludeName) {
+  if (typeof window.speechSynthesis === 'undefined') return null;
+  var voices = window.speechSynthesis.getVoices(), i;
+  for (i = 0; i < voices.length; i++) { var v = voices[i];  if (v.lang  && v.lang.toLowerCase().indexOf('en-us') === 0 && v.name !== excludeName) return v; }
+  for (i = 0; i < voices.length; i++) { var v2 = voices[i]; if (v2.lang && v2.lang.toLowerCase().indexOf('en')   === 0 && v2.name !== excludeName) return v2; }
+  return null;
+}
 function _ic_pickSystemVoice() { return _ic_findVoiceByNames(_ic_maleVoicePreferences) || _ic_anyEnglishVoice(); }
 function _ic_pickFemaleVoice() {
+  var sysName = _ic_systemVoice ? _ic_systemVoice.name : null;
   var f = _ic_findVoiceByNames(_ic_femaleVoicePreferences);
-  if (f && (!_ic_systemVoice || f.name !== _ic_systemVoice.name)) return f;  // prefer distinct
-  return f || _ic_anyEnglishVoice();
+  if (f && f.name !== sysName) return f;
+  // No distinct female-named voice — at least use a DIFFERENT voice than the
+  // male one if the device has another English voice (pitch differs them too).
+  return _ic_anyEnglishVoiceExcept(sysName) || f || _ic_anyEnglishVoice();
 }
 
 // Resolve voices now (may be empty) and again when the browser loads them async.
@@ -4448,15 +4458,20 @@ function _ic_playAttentionTone(onDone) {
     osc.connect(g); g.connect(ctx.destination);
     osc.start(start); osc.stop(start + dur + 0.02);
   }
-  var t = ctx.currentTime;
-  var d1 = 0.40, gap = 0.05, d2 = 0.55, pairGap = 0.14;
-  var pair = d1 + gap + d2;
-  [0, pair + pairGap].forEach(function(off) {          // play the A->B pair twice
-    tone(525, t + off, d1);
-    tone(690, t + off + d1 + gap, d2);
-  });
-  var total = pair + pairGap + pair;
-  if (onDone) setTimeout(onDone, total * 1000 + 160);
+  function go() {
+    var t = ctx.currentTime + 0.06;   // small lead so the first tone isn't dropped
+    var d1 = 0.40, gap = 0.05, d2 = 0.55, pairGap = 0.14;
+    var pair = d1 + gap + d2;
+    [0, pair + pairGap].forEach(function(off) {          // play the A->B pair twice
+      tone(525, t + off, d1);
+      tone(690, t + off + d1 + gap, d2);
+    });
+    var total = pair + pairGap + pair;
+    if (onDone) setTimeout(onDone, total * 1000 + 220);
+  }
+  // On mobile the context is often still suspended here — resume, then schedule.
+  if (ctx.state === 'suspended' && ctx.resume) { ctx.resume().then(go).catch(go); }
+  else { go(); }
 }
 
 function _ic_playIntro() {
@@ -4464,12 +4479,12 @@ function _ic_playIntro() {
   function female() {                              // the urgent 911 closer
     if (spokeFemale) return; spokeFemale = true;
     _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
-      "911, what's your emergency?", null, { rate: 1.28, pitch: 1.08 });
+      "911, what's your emergency?", null, { rate: 1.28, pitch: 1.35 });   // higher = feminine/urgent
   }
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
       'Boston Common Security Operations Center online. Press Answer 911 Call to begin.',
-      function() { setTimeout(female, 1000); });   // 1s gap after the male line ends
+      function() { setTimeout(female, 1000); }, { pitch: 0.8 });           // lower = masculine
     setTimeout(female, 8000);                      // safety net only if onend never fires
   }
   _ic_playAttentionTone(male);                     // tone -> male -> female
