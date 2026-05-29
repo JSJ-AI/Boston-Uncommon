@@ -4486,8 +4486,12 @@ function _ic_playIntro() {
   var spokeFemale = false;
   function female() {                              // the urgent 911 closer
     if (spokeFemale) return; spokeFemale = true;
+    // Phone TTS engines render the same rate/pitch faster + higher than desktop,
+    // so soften them on mobile to match how the PC version sounds. Desktop stays 1.6/1.2.
+    var _ic_mob = window.matchMedia('(max-width: 768px)').matches;
     _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
-      "911, what's your emergency?", null, { rate: 1.6, pitch: 1.2 });   // faster, pitch unchanged
+      "911, what's your emergency?", null,
+      _ic_mob ? { rate: 1.2, pitch: 1.0 } : { rate: 1.6, pitch: 1.2 });
   }
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
