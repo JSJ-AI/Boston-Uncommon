@@ -4487,7 +4487,7 @@ function _ic_playIntro() {
   function female() {                              // the urgent 911 closer
     if (spokeFemale) return; spokeFemale = true;
     _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
-      "911, what's your emergency?", null, { rate: 1.4, pitch: 1.2 });   // faster + higher = urgent
+      "911, what's your emergency?", null, { rate: 1.6, pitch: 1.2 });   // faster, pitch unchanged
   }
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
