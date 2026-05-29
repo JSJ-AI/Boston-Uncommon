@@ -431,12 +431,15 @@ body{display:flex;flex-direction:column;}
   #right-panel{order:2;}
   #mwrap      {order:3;}
 
-  /* Scenario Control — flows at natural height; every control is reachable by
-     page-scroll (no height cap, no inner scrollbar) */
+  /* Scenario Control — its own self-contained touch-scroll band (capped), so
+     it shows the compact deployment controls and you slide WITHIN it rather
+     than it expanding down the page. (Compaction rules further below hide the
+     section labels so the deployment badges, not the legend, are what shows.) */
   #left-panel{
     width:100%;min-width:0;
     flex:0 0 auto;
-    height:auto;max-height:none;overflow:visible;
+    max-height:28vh;
+    overflow-y:auto;
     border-right:none;
     border-bottom:1px solid var(--brd);
   }
@@ -450,33 +453,40 @@ body{display:flex;flex-direction:column;}
     border-bottom:1px solid var(--brd);
   }
 
-  /* Right panel — Alert Feed + Active Incidents as two resizable sections.
-     Occupies a fixed slice of the scrolling page (50vh); the divider between
-     the two sections lets you trade height between them, and each body scrolls
-     internally. (The map is sized by scroll, not by a panel-vs-map divider.) */
+  /* Right panel — Alert Feed and Active Incidents, each its OWN resizable
+     section with its OWN drag handle directly beneath it. Drag a handle to
+     grow/shrink the section above it; the body scrolls internally. Defaults
+     are small (about one message tall) so the map gets room by default — drag
+     a handle down to reveal more. The panel flows in the scrolling page, with
+     the tall map below it. */
   #right-panel{
     width:100%;min-width:0;
     flex:0 0 auto;
-    height:50vh;
-    overflow:hidden;
+    height:auto;
+    overflow:visible;
     display:flex;flex-direction:column;
     border-left:none;
     border-bottom:1px solid var(--brd);
   }
-  /* Each section: fixed .ph header + scrollable body. Start as an even split;
-     dragging the divider switches the alert section to an explicit height and
-     the active section fills the rest. */
-  .rp-sec{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1 1 0;}
+  /* Each section: fixed .ph header + scrollable body. Small default heights
+     (~header + one card). JS resizes these via the handle below each. */
+  .rp-sec{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:0 0 auto;}
+  .rp-alert{height:120px;}
+  .rp-active{height:84px;}
+  /* Drag handle / "shrink zone": faintly tinted band with a light dim-blue
+     grip so you can see it's there; the grip goes bright (accent) on touch. */
   .rp-divider{
-    display:block;flex:0 0 auto;height:18px;background:var(--sur);
+    display:block;flex:0 0 auto;height:18px;
+    background:rgba(0,212,255,0.06);
     border-top:1px solid var(--brd);cursor:ns-resize;touch-action:none;
     user-select:none;position:relative;
   }
   .rp-divider::before{
     content:'';position:absolute;left:50%;top:50%;
     transform:translate(-50%,-50%);width:44px;height:4px;
-    background:var(--brd);border-radius:2px;
+    background:rgba(0,212,255,0.45);border-radius:2px;
   }
+  .rp-divider:active{background:rgba(0,212,255,0.14);}
   .rp-divider:active::before{background:var(--acc);}
 
   /* Left-panel compaction:
@@ -4594,13 +4604,15 @@ document.getElementById('btn-reset').onclick=function(){
   }, 400);
 };
 
-// ── Mobile: resizable Alert Feed vs Active Incidents + map resize ───────────
+// ── Mobile: independently resizable Alert Feed + Active Incidents ───────────
 // On mobile the page scrolls vertically and the map is a tall 85vh hero (see
-// the mobile CSS block). Inside the right panel, Alert Feed and Active
-// Incidents become two sections split by a draggable divider so their heights
-// can be traded; each body scrolls internally and each keeps a min-height
-// floor. Desktop ignores all of it (.rp-sec is display:contents, the divider
-// is display:none). The map is also kept correctly sized on rotation.
+// the mobile CSS block). Alert Feed and Active Incidents each become their own
+// section with its OWN drag handle directly beneath it: drag a handle to
+// grow/shrink the section right above it (independently of the other), and the
+// body scrolls internally. Each keeps a small floor so it can shrink to about
+// its header but never vanish. Desktop ignores all of it (.rp-sec is
+// display:contents, handles are display:none). The map is also kept correctly
+// sized on rotation.
 (function setupMobilePanels(){
   var panel = document.getElementById('right-panel');
   var feed  = document.getElementById('alert-feed');
@@ -4610,44 +4622,57 @@ document.getElementById('btn-reset').onclick=function(){
     var taskHdr = tasks.previousElementSibling;   // "Active Incidents" header (.ph)
     var alertSec = document.createElement('div'); alertSec.className = 'rp-sec rp-alert';
     var activeSec = document.createElement('div'); activeSec.className = 'rp-sec rp-active';
-    var divider = document.createElement('div');
-    divider.className = 'rp-divider';
-    divider.setAttribute('role', 'separator');
-    divider.setAttribute('aria-label', 'Drag to resize alert feed vs active incidents');
     if (feedHdr) alertSec.appendChild(feedHdr);
     alertSec.appendChild(feed);
     if (taskHdr) activeSec.appendChild(taskHdr);
     activeSec.appendChild(tasks);
-    panel.appendChild(alertSec);
-    panel.appendChild(divider);
-    panel.appendChild(activeSec);
 
-    var HANDLE = 18, ALERT_MIN = 70, ACTIVE_MIN = 70;
-    function isMobile(){ return window.matchMedia('(max-width: 768px)').matches; }
-    var dragging = false, startY = 0, startAlertH = 0;
-    divider.addEventListener('pointerdown', function(e){
-      if (!isMobile()) return;
-      dragging = true; startY = e.clientY;
-      startAlertH = alertSec.getBoundingClientRect().height;
-      alertSec.style.flex = '0 0 auto';   // switch from even-split to explicit px
-      try { divider.setPointerCapture(e.pointerId); } catch(_){}
-      e.preventDefault();
-    });
-    divider.addEventListener('pointermove', function(e){
-      if (!dragging) return;
-      var innerAvail = panel.clientHeight - HANDLE;
-      var h = startAlertH + (e.clientY - startY);
-      h = Math.max(ALERT_MIN, Math.min(h, innerAvail - ACTIVE_MIN));
-      alertSec.style.height = h + 'px';
-      e.preventDefault();
-    });
-    function endDrag(e){
-      if (!dragging) return;
-      dragging = false;
-      try { divider.releasePointerCapture(e.pointerId); } catch(_){}
+    function makeHandle(label){
+      var d = document.createElement('div');
+      d.className = 'rp-divider';
+      d.setAttribute('role', 'separator');
+      d.setAttribute('aria-label', label);
+      return d;
     }
-    divider.addEventListener('pointerup', endDrag);
-    divider.addEventListener('pointercancel', endDrag);
+    var aHandle = makeHandle('Drag to resize the alert feed');
+    var iHandle = makeHandle('Drag to resize active incidents');
+
+    // Order: alert section, its handle, active section, its handle.
+    panel.appendChild(alertSec);
+    panel.appendChild(aHandle);
+    panel.appendChild(activeSec);
+    panel.appendChild(iHandle);
+
+    var SEC_MIN = 48;   // ~header height; section can shrink to a strip, not vanish
+    function isMobile(){ return window.matchMedia('(max-width: 768px)').matches; }
+
+    // A handle resizes the section directly above it, independently.
+    function wire(handle, section){
+      var dragging = false, startY = 0, startH = 0;
+      handle.addEventListener('pointerdown', function(e){
+        if (!isMobile()) return;
+        dragging = true; startY = e.clientY;
+        startH = section.getBoundingClientRect().height;
+        try { handle.setPointerCapture(e.pointerId); } catch(_){}
+        e.preventDefault();
+      });
+      handle.addEventListener('pointermove', function(e){
+        if (!dragging) return;
+        var h = startH + (e.clientY - startY);
+        h = Math.max(SEC_MIN, Math.min(h, window.innerHeight * 0.85));
+        section.style.height = h + 'px';
+        e.preventDefault();
+      });
+      function endDrag(e){
+        if (!dragging) return;
+        dragging = false;
+        try { handle.releasePointerCapture(e.pointerId); } catch(_){}
+      }
+      handle.addEventListener('pointerup', endDrag);
+      handle.addEventListener('pointercancel', endDrag);
+    }
+    wire(aHandle, alertSec);
+    wire(iHandle, activeSec);
   }
 
   // Keep the map canvas correctly sized on rotation / viewport change.
