@@ -4399,18 +4399,26 @@ if (typeof window.speechSynthesis !== 'undefined') {
   };
 }
 
+// Keep references to in-flight utterances: Chrome/Android will garbage-collect
+// an utterance still being spoken, which causes cut-off / stutter / repeats.
+var _ic_uttRefs = [];
 function _ic_speakWith(voice, text, onEnd, opts) {
   if (typeof window.speechSynthesis === 'undefined') return;
   try {
-    window.speechSynthesis.cancel();
+    var ss = window.speechSynthesis;
+    try { ss.resume(); } catch(e) {}                 // un-stick a paused Android engine
+    if (ss.speaking || ss.pending) ss.cancel();      // only cancel when needed (cancel-spam stutters)
     var utt = new SpeechSynthesisUtterance(_ic_speechPrep(text));
     if (voice) utt.voice = voice;
     opts = opts || {};
     utt.rate   = opts.rate  || 1.0;
     utt.pitch  = opts.pitch || 1.0;
     utt.volume = (opts.volume == null) ? 1.0 : opts.volume;
-    if (onEnd) utt.onend = onEnd;
-    window.speechSynthesis.speak(utt);
+    _ic_uttRefs.push(utt);                           // hold a reference until it finishes
+    function release(){ var i = _ic_uttRefs.indexOf(utt); if (i >= 0) _ic_uttRefs.splice(i, 1); }
+    utt.onend   = function(){ release(); if (onEnd) onEnd(); };
+    utt.onerror = release;
+    ss.speak(utt);
   } catch(e) { /* swallow */ }
 }
 
@@ -4479,7 +4487,7 @@ function _ic_playIntro() {
   function female() {                              // the urgent 911 closer
     if (spokeFemale) return; spokeFemale = true;
     _ic_speakWith(_ic_femaleVoice || _ic_pickFemaleVoice(),
-      "911, what's your emergency?", null, { rate: 1.5, pitch: 1.4 });   // faster + higher = urgent
+      "911, what's your emergency?", null, { rate: 1.4, pitch: 1.2 });   // faster + higher = urgent
   }
   function male() {                                // steady system line first
     _ic_speakWith(_ic_systemVoice || _ic_pickSystemVoice(),
@@ -4487,7 +4495,10 @@ function _ic_playIntro() {
       function() { setTimeout(female, 1000); }, { pitch: 0.8 });           // lower = masculine
     setTimeout(female, 8000);                      // safety net only if onend never fires
   }
-  _ic_playAttentionTone(male);                     // tone -> male -> female
+  // Fire the tone best-effort, but DON'T gate the voices on it — on Android a
+  // stuck AudioContext could swallow the callback and silence the whole intro.
+  try { _ic_playAttentionTone(); } catch(e) {}
+  setTimeout(male, 2600);                          // male after the ~2.4s tone, regardless
 }
 
 function _ic_maybePlayIntro() {
