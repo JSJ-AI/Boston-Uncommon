@@ -409,7 +409,7 @@ body{display:flex;flex-direction:column;}
      Instead of locking everything to the viewport, the mobile view scrolls.
      The map gets a tall fixed height (85vh) so it dominates when you reach it;
      the topbar is pinned so the top is always one tap away. Stack order:
-     Scenario Control -> Map (hero) -> Alert Feed + Active Incidents.
+     Scenario Control -> Alert Feed + Active Incidents -> Map (hero).
      MapLibre captures touch for pan/zoom, so you scroll the PAGE by dragging
      on a non-map strip — and because the map is 85vh (not full height) a panel
      edge always peeks above/below it, so you're never trapped on the map.
@@ -428,8 +428,8 @@ body{display:flex;flex-direction:column;}
 
   /* Visual order (flip these integers to rearrange the stack) */
   #left-panel {order:1;}
-  #mwrap      {order:2;}
-  #right-panel{order:3;}
+  #right-panel{order:2;}
+  #mwrap      {order:3;}
 
   /* Scenario Control — flows at natural height; every control is reachable by
      page-scroll (no height cap, no inner scrollbar) */
